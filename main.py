@@ -99,17 +99,23 @@ def repackage_hidden(h):
         return tuple(repackage_hidden(v) for v in h)
 
 
-def mask_gen(lengths):
+def mask_gen(lengths, cuda=False):
     max_len = lengths[0]
     size = len(lengths)
     mask = torch.ByteTensor(size, max_len).zero_()
+    if cuda:
+        mask = mask.cuda()
     for i in range(size):
         mask[i][:lengths[i]].fill_(1)
     return mask
 
 
-def corpus_gen(data_batch):
+def corpus_gen(data_batch, cuda=False):
     data, target, length = data_batch
+    if cuda:
+        data = data.cuda()
+        target = target.cuda()
+        length = length.cuda()
     length, idx = torch.sort(length, dim=0, descending=True)
     max_len = length[0]
     data = data.index_select(0, idx)
@@ -184,13 +190,8 @@ def train():
         # If we didn't, the model would try backpropagating all the way to
         # start of the dataset.
         model.zero_grad()
-        data, target, length = corpus_gen(data_batch)
-        if args.cuda:
-            data = data.contiguous().cuda(async=True)
-            target = target.contiguous().cuda(async=True)
-        mask = Variable(mask_gen(length))
-        if args.cuda:
-            mask = mask.cuda()
+        data, target, length = corpus_gen(data_batch, args.cuda)
+        mask = Variable(mask_gen(length, args.cuda))
 
         output = model(data, length)
         output = output.masked_select(
