@@ -80,9 +80,9 @@ print('Vocabulary size is {}'.format(ntokens))
 # add one token for padding
 model = model.RNNModel(args.model, ntokens, args.emsize,
                        args.nhid, args.nlayers, args.dropout, args.tied)
+print(model)
 if args.cuda:
     model.cuda()
-print(model)
 
 criterion = nn.CrossEntropyLoss()
 
@@ -134,7 +134,7 @@ def calc_cross_entropy(output, label, length):
 def eval_cross_entropy(output, target, length):
     mask = Variable(mask_gen(length))
     if args.cuda:
-        mask = mask.cuda()
+        mask = mask.cuda(async=True)
     output = output.masked_select(
         mask.unsqueeze(dim=2).expand_as(output)
     )
@@ -157,8 +157,8 @@ def evaluate(data_source):
         data, target, length = corpus_gen(data_batch)
 
         if args.cuda:
-            data = data.cuda()
-            target = target.cuda()
+            data = data.contiguous().cuda(async=True)
+            target = target.contiguous().cuda(async=True)
 
         output = model(data, length)
 
@@ -186,20 +186,13 @@ def train():
         model.zero_grad()
         data, target, length = corpus_gen(data_batch)
         if args.cuda:
-            data = data.cuda()
-            target = target.cuda()
-
-        output = model(data, length)
-        # loss = criterion(output.view(-1, ntokens),
-        #                  target.contiguous().view(-1))
-        # loss.backward()
-        # if batch % args.log_interval == 0 and batch > 0:
-        #     print(math.exp(eval_cross_entropy(output, target, length) / length.sum()))
-
+            data = data.contiguous().cuda(async=True)
+            target = target.contiguous().cuda(async=True)
         mask = Variable(mask_gen(length))
         if args.cuda:
             mask = mask.cuda()
-        tmp = output, target
+
+        output = model(data, length)
         output = output.masked_select(
             mask.unsqueeze(dim=2).expand_as(output)
         )
@@ -219,7 +212,6 @@ def train():
         total_loss += loss.data
 
         if batch % args.log_interval == 0 and batch > 0:
-            print(eval_cross_entropy(tmp[0], tmp[1], length) / length.sum())
             cur_loss = total_loss[0] / args.log_interval
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches'
