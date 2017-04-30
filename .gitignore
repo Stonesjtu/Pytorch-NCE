@@ -2,3 +2,6 @@ dcgan/data
 data
 *.pyc
 OpenNMT/data
+.cache
+*.pt
+*.out
