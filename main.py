@@ -51,6 +51,8 @@ def setup_parser():
                         help='path to save the final model')
     parser.add_argument('--prof', action='store_true',
                         help='runs a few iteration with profiling tools')
+    parser.add_argument('--load', action='store_true',
+                        help='load a pre-trained model')
     return parser
 
 
@@ -117,7 +119,9 @@ def build_unigram_noise(padded_loader):
     return noise
 
 noise = build_unigram_noise(corpus.train)
-nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=5, norm_term=9, ntokens=ntokens)
+if args.cuda:
+    noise = noise.cuda()
+nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=10, norm_term=9, ntokens=ntokens, cuda=args.cuda)
 
 ###############################################################################
 # Training code
@@ -266,6 +270,9 @@ if __name__ == '__main__':
     # Loop over epochs.
     lr = args.lr
     best_val_ppl = None
+    if args.load:
+        with open(args.save, 'rb') as f:
+            model = torch.load(f)
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
