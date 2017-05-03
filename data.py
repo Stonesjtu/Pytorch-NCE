@@ -1,4 +1,6 @@
+#  data utils of this language model: corpus reader and noise data generator
 import os
+from nltk.probability import FreqDist
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
@@ -36,18 +38,27 @@ class Dictionary(object):
 
 
 class PaddedDataset(Dataset):
+    """dataset that zero-pads all sentence into same length
+    Parameters:
+        file_path: the directory of all train, test and valid corpus
+        dictionary: a word-to-index mapping, will build a new one if not provided
+    """
     def __init__(self, file_path, dictionary=None):
         super(PaddedDataset, self).__init__()
 
         self.dictionary = Dictionary()
         if not dictionary:
-            self.build_dict(file_path)
+            self._build_dict(file_path)
         else:
             self.dictionary = dictionary
         self.file_path = file_path
         self.data, self.lengths = self.tokenize(file_path)
 
-    def build_dict(self, path):
+    def _build_dict(self, path):
+        """build the dictionary before the training phase
+        Parameters:
+            path: training corpus location
+        """
         assert os.path.exists(path)
         # Add words to the dictionary
         with open(path, 'r') as f:
@@ -111,3 +122,4 @@ class Corpus(object):
             # waiting for a new torch version to support
             # drop_last=True,
         )
+

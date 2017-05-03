@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import time
 import math
@@ -6,44 +7,54 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
+from nltk.probability import FreqDist
 
 import data
 import model
+import nce
 
-parser = argparse.ArgumentParser(
-    description='PyTorch PennTreeBank RNN/LSTM Language Model')
-parser.add_argument('--data', type=str, default='./data/penn',
-                    help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
-parser.add_argument('--emsize', type=int, default=200,
-                    help='size of word embeddings')
-parser.add_argument('--nhid', type=int, default=200,
-                    help='number of hidden units per layer')
-parser.add_argument('--nlayers', type=int, default=2,
-                    help='number of layers')
-parser.add_argument('--lr', type=float, default=1.0,
-                    help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.25,
-                    help='gradient clipping')
-parser.add_argument('--epochs', type=int, default=40,
-                    help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=20, metavar='N',
-                    help='batch size')
-parser.add_argument('--bptt', type=int, default=35,
-                    help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.2,
-                    help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--tied', action='store_true',
-                    help='tie the word embedding and softmax weights')
-parser.add_argument('--seed', type=int, default=1111,
-                    help='random seed')
-parser.add_argument('--cuda', action='store_true',
-                    help='use CUDA')
-parser.add_argument('--log-interval', type=int, default=200, metavar='N',
-                    help='report interval')
-parser.add_argument('--save', type=str, default='model.pt',
-                    help='path to save the final model')
+def setup_parser():
+
+    parser = argparse.ArgumentParser(
+        description='PyTorch PennTreeBank RNN/LSTM Language Model')
+    parser.add_argument('--data', type=str, default='./data/penn',
+                        help='location of the data corpus')
+    parser.add_argument('--model', type=str, default='LSTM',
+                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
+    parser.add_argument('--emsize', type=int, default=200,
+                        help='size of word embeddings')
+    parser.add_argument('--nhid', type=int, default=200,
+                        help='number of hidden units per layer')
+    parser.add_argument('--nlayers', type=int, default=2,
+                        help='number of layers')
+    parser.add_argument('--lr', type=float, default=1.0,
+                        help='initial learning rate')
+    parser.add_argument('--clip', type=float, default=0.25,
+                        help='gradient clipping')
+    parser.add_argument('--epochs', type=int, default=40,
+                        help='upper epoch limit')
+    parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+                        help='batch size')
+    parser.add_argument('--bptt', type=int, default=35,
+                        help='sequence length')
+    parser.add_argument('--dropout', type=float, default=0.2,
+                        help='dropout applied to layers (0 = no dropout)')
+    parser.add_argument('--tied', action='store_true',
+                        help='tie the word embedding and softmax weights')
+    parser.add_argument('--seed', type=int, default=1111,
+                        help='random seed')
+    parser.add_argument('--cuda', action='store_true',
+                        help='use CUDA')
+    parser.add_argument('--log-interval', type=int, default=200, metavar='N',
+                        help='report interval')
+    parser.add_argument('--save', type=str, default='model.pt',
+                        help='path to save the final model')
+    parser.add_argument('--prof', action='store_true',
+                        help='runs a few iteration with profiling tools')
+    return parser
+
+
+parser = setup_parser()
 args = parser.parse_args()
 
 # Set the random seed manually for reproducibility.
@@ -85,6 +96,28 @@ if args.cuda:
     model.cuda()
 
 criterion = nn.CrossEntropyLoss()
+
+def build_unigram_noise(padded_loader):
+    """build the unigram noise from a corpus
+    Parameters:
+        padded_loader: the data to extract the unigram distribution
+    Return:
+        unigram_noise: a torch.Tensor with size ntokens,
+        elements indicate the probability distribution
+    """
+    freq = FreqDist(padded_loader.dataset.data.view(-1))
+    # remove the zero-padding index 0
+    freq[0] = 0
+    total = freq.N()
+    noise = torch.zeros(ntokens)
+    for idx in xrange(10000):
+        noise[idx] = freq[idx]
+    noise = noise / total
+    assert abs(noise.sum() - 1) < 0.001
+    return noise
+
+noise = build_unigram_noise(corpus.train)
+nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=5, norm_term=9, ntokens=ntokens)
 
 ###############################################################################
 # Training code
@@ -168,7 +201,6 @@ def evaluate(data_source):
 
         output = model(data, length)
 
-        calc_loss += calc_cross_entropy(output.data, target.data, length)
         eval_loss += eval_cross_entropy(output, target, length)
         total_length += length.sum()
 
@@ -189,6 +221,8 @@ def train():
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to
         # start of the dataset.
+        if args.prof and batch == 10:
+            break
         model.zero_grad()
         data, target, length = corpus_gen(data_batch, args.cuda)
         mask = Variable(mask_gen(length, args.cuda))
@@ -200,9 +234,9 @@ def train():
 
 
         target = target.masked_select(mask)
-        loss = criterion(
+        loss = nce_criterion(
             output.view(target.size(0), ntokens),
-            target.contiguous(),
+            target,
         )
         loss.backward()
 
