@@ -1,6 +1,7 @@
 # the NCE module written for pytorch
 
-from numpy.random import randint
+import numpy as np
+from numpy.random import choice
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -43,7 +44,9 @@ class NCELoss(nn.Module):
         assert input.size(0) == target.size(0)
         data_samples = input.gather(dim=1, index=target.unsqueeze(1))
         data_prob = data_samples.sub(self.norm_term).exp()
-        noise_samples = torch.LongTensor(randint(self.ntokens - 1, size=(target.size(0), self.noise_ratio))) + 1
+        noise_samples = torch.LongTensor(
+            choice(np.arange(0, self.ntokens), p=self.noise.data.numpy(), size=(target.size(0), self.noise_ratio))
+        )
         if self.cuda:
             noise_samples = noise_samples.cuda()
         noise_probs = self.noise[noise_samples.view(-1)].view_as(noise_samples)
