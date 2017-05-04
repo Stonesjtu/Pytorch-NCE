@@ -5,4 +5,5 @@ OpenNMT/data
 .cache
 *.pt
 *.out
-profiler_out
+profiler_out/*
+*.txt
