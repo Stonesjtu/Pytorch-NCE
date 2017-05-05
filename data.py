@@ -1,6 +1,5 @@
 #  data utils of this language model: corpus reader and noise data generator
 import os
-from nltk.probability import FreqDist
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
@@ -26,11 +25,14 @@ class Dictionary(object):
     def __init__(self):
         self.word2idx = {}
         self.idx2word = []
+        self.idx2count = []
 
     def add_word(self, word):
         if word not in self.word2idx:
             self.idx2word.append(word)
             self.word2idx[word] = len(self.idx2word) - 1
+            self.idx2count.append(0)
+        self.idx2count[self.word2idx[word]] += 1
         return self.word2idx[word]
 
     def __len__(self):

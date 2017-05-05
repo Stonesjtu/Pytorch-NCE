@@ -4,17 +4,14 @@ import time
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.autograd import Variable
 import torch.optim as optim
-from nltk.probability import FreqDist
 
 import data
 import model
 import nce
 
 def setup_parser():
-
     parser = argparse.ArgumentParser(
         description='PyTorch PennTreeBank RNN/LSTM Language Model')
     parser.add_argument('--data', type=str, default='./data/penn',
@@ -51,8 +48,8 @@ def setup_parser():
                         help='path to save the final model')
     parser.add_argument('--prof', action='store_true',
                         help='runs a few iteration with profiling tools')
-    parser.add_argument('--load', action='store_true',
-                        help='load a pre-trained model')
+    parser.add_argument('--nce', action='store_true',
+                        help='use NCE as loss function')
     return parser
 
 
@@ -99,26 +96,23 @@ if args.cuda:
 
 criterion = nn.CrossEntropyLoss()
 
-def build_unigram_noise(padded_loader):
-    """build the unigram noise from a corpus
+def build_unigram_noise(freq):
+    """build the unigram noise from a list of frequency
     Parameters:
-        padded_loader: the data to extract the unigram distribution
+        freq: a tensor of #occurrences of the corresponding index
     Return:
         unigram_noise: a torch.Tensor with size ntokens,
         elements indicate the probability distribution
     """
-    freq = FreqDist(padded_loader.dataset.data.view(-1))
-    # remove the zero-padding index 0
-    freq[0] = 0
-    total = freq.N()
-    noise = torch.zeros(ntokens)
-    for idx in xrange(10000):
-        noise[idx] = freq[idx]
-    noise = noise / total
+    total = freq.sum()
+    noise = freq / total
     assert abs(noise.sum() - 1) < 0.001
     return noise
 
-noise = build_unigram_noise(corpus.train)
+noise = build_unigram_noise(
+    torch.FloatTensor(corpus.train.dataset.dictionary.idx2count
+    )
+)
 if args.cuda:
     noise = noise.cuda()
 nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=10, norm_term=9, ntokens=ntokens, cuda=args.cuda)
@@ -126,14 +120,6 @@ nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=10, norm_term=9, 
 ###############################################################################
 # Training code
 ###############################################################################
-
-
-def repackage_hidden(h):
-    """Wraps hidden states in new Variables, to detach them from their history."""
-    if type(h) == Variable:
-        return Variable(h.data)
-    else:
-        return tuple(repackage_hidden(v) for v in h)
 
 
 def mask_gen(lengths, cuda=False):
@@ -165,15 +151,6 @@ def corpus_gen(data_batch, cuda=False):
     return data, target, length
 
 
-def calc_cross_entropy(output, label, length):
-    total_cross_entropy = 0.0
-    for i in xrange(len(length)):
-        for j in xrange(length[i]):
-            total_cross_entropy += output[i][j][label[i][j]]
-
-    return -total_cross_entropy
-
-
 def eval_cross_entropy(output, target, length):
     mask = Variable(mask_gen(length))
     if args.cuda:
@@ -192,7 +169,6 @@ def eval_cross_entropy(output, target, length):
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    calc_loss = 0
     eval_loss = 0
     total_length = 0
 
@@ -207,8 +183,6 @@ def evaluate(data_source):
 
         eval_loss += eval_cross_entropy(output, target, length)
         total_length += length.sum()
-
-    print(calc_loss / total_length)
 
     return math.exp(eval_loss / total_length)
 
@@ -238,7 +212,7 @@ def train():
 
 
         target = target.masked_select(mask)
-        loss = nce_criterion(
+        loss = criterion(
             output.view(target.size(0), ntokens),
             target,
         )
@@ -270,9 +244,6 @@ if __name__ == '__main__':
     # Loop over epochs.
     lr = args.lr
     best_val_ppl = None
-    if args.load:
-        with open(args.save, 'rb') as f:
-            model = torch.load(f)
 
     # At any point you can hit Ctrl + C to break out of training early.
     try:
