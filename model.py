@@ -21,7 +21,6 @@ class RNNModel(nn.Module):
                                  options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
             self.rnn = nn.RNN(
                 ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout, batch_first=True)
-        self.decoder = nn.Linear(nhid, ntoken)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -29,23 +28,10 @@ class RNNModel(nn.Module):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        if tie_weights:
-            if nhid != ninp:
-                raise ValueError(
-                    'When using the tied flag, nhid must be equal to emsize')
-            self.decoder.weight = self.encoder.weight
-
-        self.init_weights()
 
         self.rnn_type = rnn_type
         self.nhid = nhid
         self.nlayers = nlayers
-
-    def init_weights(self):
-        initrange = 0.1
-        self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, lengths=None):
         emb = self.drop(self.encoder(input))

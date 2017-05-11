@@ -60,7 +60,6 @@ class NCELoss(nn.Module):
         if decoder_weight:
             self.decoder.weight = decoder_weight
 
-    @profile
     def forward(self, input, target):
         """compute the loss with output and the desired target
 
@@ -77,21 +76,24 @@ class NCELoss(nn.Module):
         """
 
         assert input.size(0) == target.size(0)
+        length = target.size(0)
 
         data_prob = Variable(torch.zeros(target.size())).cuda()
-        noise_in_data_probs = Variable(torch.zeros(target.size(0), self.noise_ratio)).cuda()
+        noise_in_data_probs = Variable(torch.zeros(length, self.noise_ratio)).cuda()
         noise_probs = Variable(torch.zeros(noise_in_data_probs.size())).cuda()
+        noise_samples = torch.multinomial(
+            self.noise,
+            self.noise_ratio * length,
+            replacement=True).view(length, -1)
         torch.cuda.synchronize()
         for idx, target_idx in enumerate(target):
-            noise_samples = torch.multinomial(
-                self.noise,
-                self.noise_ratio,
-                replacement=True)
-            torch.cuda.synchronize()
-            data_prob[idx], noise_in_data_probs[idx] = self._get_prob(input[idx], target_idx, noise_samples)
-            torch.cuda.synchronize()
-            noise_probs[idx] = self.noise[noise_samples]
-            torch.cuda.synchronize()
+            noise_sample = noise_samples[idx]
+            data_prob[idx], noise_in_data_probs[idx] = self._get_prob(input[idx], target_idx, noise_sample)
+            noise_probs[idx] = self.noise[noise_sample]
+        torch.cuda.synchronize()
+
+        data_prob = data_prob.sub(self.norm_term).exp()
+        noise_in_data_probs = noise_in_data_probs.sub(self.norm_term).exp()
 
         rnn_loss = torch.log(data_prob / (
             data_prob + Variable(self.noise_ratio * self.noise[target.data]
@@ -103,7 +105,7 @@ class NCELoss(nn.Module):
 
         loss = -1 * torch.sum(rnn_loss + noise_loss)
         if self.size_average:
-            loss = loss / target.size(0)
+            loss = loss / length
 
         return loss
 
@@ -111,7 +113,6 @@ class NCELoss(nn.Module):
 
         indices = torch.cat([target_idx.data, noise_idx])
         probs = self.decoder(embedding.unsqueeze(0), indices).view(-1)
-        probs = probs.sub(self.norm_term).exp()
         return probs[0], probs[1:]
 
 
