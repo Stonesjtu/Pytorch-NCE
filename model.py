@@ -55,6 +55,4 @@ class RNNModel(nn.Module):
         if isinstance(output, PackedSequence):
             output, _ = pad_packed_sequence(output, batch_first=True)
         output = self.drop(output)
-        decoded = self.decoder(output.contiguous().view(
-            output.size(0) * output.size(1), output.size(2)))
-        return decoded.view(output.size(0), output.size(1), decoded.size(1))
+        return output

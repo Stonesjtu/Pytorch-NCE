@@ -110,12 +110,22 @@ def build_unigram_noise(freq):
     return noise
 
 noise = build_unigram_noise(
-    torch.FloatTensor(corpus.train.dataset.dictionary.idx2count
-    )
+    torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
+
 if args.cuda:
     noise = noise.cuda()
-nce_criterion = nce.NCELoss(noise=Variable(noise), noise_ratio=10, norm_term=9, ntokens=ntokens, cuda=args.cuda)
+
+nce_criterion = nce.NCELoss(
+    ntokens=ntokens,
+    emb_size=args.emsize,
+    noise=noise,
+    noise_ratio=10,
+    norm_term=9,
+)
+
+if args.cuda:
+    nce_criterion.cuda()
 
 ###############################################################################
 # Training code
@@ -212,8 +222,8 @@ def train():
 
 
         target = target.masked_select(mask)
-        loss = criterion(
-            output.view(target.size(0), ntokens),
+        loss = nce_criterion(
+            output.view(target.size(0), args.emsize),
             target,
         )
         loss.backward()
