@@ -5,15 +5,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 
 
-def take(iterator, count):
-    """Take the next `count` items of iterator
-
-    Return:
-        a list of the items
-    """
-    return list(next(iterator) for _ in range(count))
-
-
 class NCELoss(nn.Module):
     """Noise Contrastive Estimation
     NCE is to eliminate the computational cost of softmax
@@ -77,30 +68,41 @@ class NCELoss(nn.Module):
         assert input.size(0) == target.size(0)
         length = target.size(0)
 
-        noise_samples = torch.multinomial(
-            self.noise,
-            self.noise_ratio * length,
-            replacement=True).view(length, -1)
-        data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
-        noise_probs = Variable(
-            self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
-        )
+        if self.training:
+            noise_samples = torch.multinomial(
+                self.noise,
+                self.noise_ratio * length,
+                replacement=True
+            ).view(length, -1)
+            data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
+            noise_probs = Variable(
+                self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
+            )
 
-        rnn_loss = torch.log(data_prob / (
-            data_prob + Variable(self.noise_ratio * self.noise[target.data]
-        )))
+            rnn_loss = torch.log(data_prob / (
+                data_prob + Variable(self.noise_ratio * self.noise[target.data]
+            )))
 
-        noise_loss = torch.sum(
-            torch.log((self.noise_ratio * noise_probs) / (noise_in_data_probs + self.noise_ratio * noise_probs)), 1
-        )
+            noise_loss = torch.sum(
+                torch.log((self.noise_ratio * noise_probs) / (noise_in_data_probs + self.noise_ratio * noise_probs)), 1
+            )
 
-        loss = -1 * torch.sum(rnn_loss + noise_loss)
+            loss = -1 * torch.sum(rnn_loss + noise_loss)
+        else:
+            pass
         if self.size_average:
             loss = loss / length
 
         return loss
 
     def _get_prob(self, embedding, target_idx, noise_idx):
+        """Get the NCE estimated probability for target and noise
+
+        Shape:
+            - Embedding: :math:`(N, E)`
+            - Target_idx: :math:`(N)`
+            - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
+        """
 
         embedding = embedding.unsqueeze(1)
         indices = torch.cat([target_idx.unsqueeze(1), noise_idx], dim=1)
@@ -125,5 +127,5 @@ class IndexLinear(nn.Linear):
 
         # shape: target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
         target_batch = self.weight[indices.view(-1)].view(indices.size(0), indices.size(1), -1).transpose(1,2)
-        out = torch.bmm(input, target_batch)
+        out = torch.bmm(input, target_batch) + self.bias[indices.view(-1)]
         return out

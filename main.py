@@ -189,7 +189,11 @@ def evaluate(data_source):
             data = data.contiguous().cuda(async=True)
             target = target.contiguous().cuda(async=True)
 
-        output = model(data, length)
+        output = model(data, length).contiguous().view(target.numel(), args.emsize)
+        output = output.mm(
+            nce_criterion.decoder.weight.t()
+        ) + nce_criterion.decoder.bias.repeat(1, output.size(0))
+        output = output.view(target.size(0), target.size(1), -1)
 
         eval_loss += eval_cross_entropy(output, target, length)
         total_length += length.sum()
@@ -198,7 +202,11 @@ def evaluate(data_source):
 
 
 def train():
-    optimizer = optim.SGD(params=model.parameters(), lr=lr,
+    params = [
+        {'params': model.parameters()},
+        {'params': nce_criterion.parameters()},
+    ]
+    optimizer = optim.SGD(params=params, lr=lr,
                           momentum=0.9, weight_decay=1e-5)
     # Turn on training mode which enables dropout.
     model.train()
@@ -211,7 +219,7 @@ def train():
         # start of the dataset.
         if args.prof and batch == 10:
             break
-        model.zero_grad()
+        optimizer.zero_grad()
         data, target, length = corpus_gen(data_batch, args.cuda)
         mask = Variable(mask_gen(length, args.cuda))
 
@@ -230,6 +238,7 @@ def train():
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
+        torch.nn.utils.clip_grad_norm(nce_criterion.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.data
