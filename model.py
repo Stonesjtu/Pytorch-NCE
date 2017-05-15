@@ -32,6 +32,11 @@ class RNNModel(nn.Module):
         self.rnn_type = rnn_type
         self.nhid = nhid
         self.nlayers = nlayers
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        init_range = 0.1
+        self.encoder.weight.data.uniform_(-init_range, init_range)
 
     def forward(self, input, lengths=None):
         emb = self.drop(self.encoder(input))

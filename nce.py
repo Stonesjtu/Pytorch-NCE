@@ -80,7 +80,7 @@ class NCELoss(nn.Module):
             )
 
             rnn_loss = torch.log(data_prob / (
-                data_prob + Variable(self.noise_ratio * self.noise[target.data]
+                data_prob + self.noise_ratio * Variable(self.noise[target.data]
             )))
 
             noise_loss = torch.sum(
@@ -116,16 +116,28 @@ class IndexLinear(nn.Linear):
     """A linear layer that only decodes the results of provided indices
 
     Args:
-        index: the indices of interests.
+        indices: the indices of interests.
 
     Shape:
-        - Input :math:`(N, in\_features)`
-        - Index :math:`(M)` where `max(M) <= N`
+        - Input :math:`(N, 1, in\_features)`
+        - Indices :math:`(N, 1+N_r)` where `max(M) <= N`
     """
 
     def forward(self, input, indices):
+        """
+        Shape:
+            - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
+        """
 
-        # shape: target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
-        target_batch = self.weight[indices.view(-1)].view(indices.size(0), indices.size(1), -1).transpose(1,2)
-        out = torch.bmm(input, target_batch) + self.bias[indices.view(-1)]
+        # the pytorch's [] operator BP can't correctly
+        indices = Variable(indices)
+        target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
+        bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
+        out = torch.baddbmm(1, bias, 1, input, target_batch)
         return out
+
+    def reset_parameters(self):
+        print('initing IndexLinear parameters')
+        init_range = 0.1
+        self.bias.data.fill_(0)
+        self.weight.data.uniform_(-init_range, init_range)
