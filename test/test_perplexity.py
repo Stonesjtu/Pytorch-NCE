@@ -1,8 +1,7 @@
 import torch
 from torch.autograd import Variable
-import torch.nn.functional as F
 
-from main import corpus, eval_cross_entropy, calc_cross_entropy
+from ../main.py import corpus, eval_cross_entropy
 
 
 MOCK_OUTPUT = torch.Tensor(
@@ -29,18 +28,6 @@ def test_import():
 
 def around(source, target):
     return abs(source - target) <= 0.2
-
-
-def test_calc_cross_entropy():
-    def softmax(tensor):
-        v = Variable(tensor)
-        output = F.log_softmax(v).data
-        return output
-    MOCK_OUTPUT_LOG_SOFTMAX = softmax(MOCK_OUTPUT).unsqueeze(0)
-    print(MOCK_OUTPUT_LOG_SOFTMAX)
-    loss = calc_cross_entropy(
-        MOCK_OUTPUT_LOG_SOFTMAX, MOCK_LABEL, MOCK_LENGTH)
-    assert around(loss, EXPECT_LOSS)
 
 
 def test_eval_cross_entropy():
