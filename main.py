@@ -50,6 +50,8 @@ def setup_parser():
                         help='runs a few iteration with profiling tools')
     parser.add_argument('--nce', action='store_true',
                         help='use NCE as loss function')
+    parser.add_argument('--noise_ratio', type=int, default=10,
+                        help='set the noise ratio of NCE sampling')
     return parser
 
 
@@ -120,7 +122,7 @@ nce_criterion = nce.NCELoss(
     ntokens=ntokens,
     emb_size=args.emsize,
     noise=noise,
-    noise_ratio=10,
+    noise_ratio=args.noise_ratio,
     norm_term=9,
 )
 
