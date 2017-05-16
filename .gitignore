@@ -7,3 +7,4 @@ OpenNMT/data
 *.out
 profiler_out/*
 *.txt
+log
