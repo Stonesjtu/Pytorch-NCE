@@ -1,3 +1,10 @@
+This NCE module if forked from the pytorch/examples repo.
+
+new arguments
+```bash
+python main.py --noise_ratio 10 --norm_term 9
+```
+
 # Word-level language modeling RNN
 
 This example trains a multi-layer RNN (Elman, GRU, or LSTM) on a language modeling task.

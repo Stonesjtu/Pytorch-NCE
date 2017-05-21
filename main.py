@@ -52,6 +52,8 @@ def setup_parser():
                         help='use NCE as loss function')
     parser.add_argument('--noise_ratio', type=int, default=10,
                         help='set the noise ratio of NCE sampling')
+    parser.add_argument('--norm_term', type=int, default=9,
+                        help='set the log normalization term of NCE sampling')
     return parser
 
 
@@ -123,7 +125,7 @@ nce_criterion = nce.NCELoss(
     emb_size=args.emsize,
     noise=noise,
     noise_ratio=args.noise_ratio,
-    norm_term=9,
+    norm_term=args.norm_term,
 )
 
 if args.cuda:
