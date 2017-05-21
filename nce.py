@@ -104,9 +104,9 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        embedding = embedding.unsqueeze(1)
+        embedding = embedding
         indices = torch.cat([target_idx.unsqueeze(1), noise_idx], dim=1)
-        probs = self.decoder(embedding, indices).squeeze()
+        probs = self.decoder(embedding, indices)
 
         probs = probs.sub(self.norm_term).exp()
         return probs[:,0], probs[:,1:]
@@ -119,22 +119,28 @@ class IndexLinear(nn.Linear):
         indices: the indices of interests.
 
     Shape:
-        - Input :math:`(N, 1, in\_features)`
+        - Input :math:`(N, in\_features)`
         - Indices :math:`(N, 1+N_r)` where `max(M) <= N`
+
+    Return:
+        - out: :math:`(N, 1+N_r)`
     """
 
-    def forward(self, input, indices):
+    def forward(self, input, indices=None):
         """
         Shape:
             - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
         """
 
+        if not indices:
+            indices = torch.range(0, self.out_features - 1)
         # the pytorch's [] operator BP can't correctly
+        input = input.unsqueeze(1)
         indices = Variable(indices)
         target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
         bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
         out = torch.baddbmm(1, bias, 1, input, target_batch)
-        return out
+        return out.squeeze()
 
     def reset_parameters(self):
         print('initing IndexLinear parameters')
