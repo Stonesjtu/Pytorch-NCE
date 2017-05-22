@@ -123,7 +123,7 @@ class IndexLinear(nn.Linear):
         - Indices :math:`(N, 1+N_r)` where `max(M) <= N`
 
     Return:
-        - out: :math:`(N, 1+N_r)`
+        - out :math:`(N, 1+N_r)`
     """
 
     def forward(self, input, indices=None):
@@ -132,8 +132,8 @@ class IndexLinear(nn.Linear):
             - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
         """
 
-        if not indices:
-            indices = torch.range(0, self.out_features - 1)
+        if indices is None:
+            return super(IndexLinear, self).forward(input)
         # the pytorch's [] operator BP can't correctly
         input = input.unsqueeze(1)
         indices = Variable(indices)
