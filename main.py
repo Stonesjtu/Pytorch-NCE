@@ -183,6 +183,7 @@ def eval_cross_entropy(output, target, length):
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
+    nce_criterion.eval()
     eval_loss = 0
     total_length = 0
 
@@ -194,9 +195,7 @@ def evaluate(data_source):
             target = target.contiguous().cuda(async=True)
 
         output = model(data, length).contiguous().view(target.numel(), args.emsize)
-        output = output.mm(
-            nce_criterion.decoder.weight.t()
-        ) + nce_criterion.decoder.bias.repeat(1, output.size(0))
+        output = nce_criterion(output)
         output = output.view(target.size(0), target.size(1), -1)
 
         eval_loss += eval_cross_entropy(output, target, length)
@@ -214,6 +213,7 @@ def train():
                           momentum=0.9, weight_decay=1e-5)
     # Turn on training mode which enables dropout.
     model.train()
+    nce_criterion.train()
     total_loss = 0
     start_time = time.time()
     batch = 0

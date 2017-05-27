@@ -50,7 +50,7 @@ class NCELoss(nn.Module):
         if decoder_weight:
             self.decoder.weight = decoder_weight
 
-    def forward(self, input, target):
+    def forward(self, input, target=None):
         """compute the loss with output and the desired target
 
         Parameters:
@@ -65,10 +65,10 @@ class NCELoss(nn.Module):
             the scalar NCELoss Variable ready for backward
         """
 
-        assert input.size(0) == target.size(0)
-        length = target.size(0)
-
         if self.training:
+            assert input.size(0) == target.size(0)
+            length = target.size(0)
+
             noise_samples = torch.multinomial(
                 self.noise,
                 self.noise_ratio * length,
@@ -88,12 +88,12 @@ class NCELoss(nn.Module):
             )
 
             loss = -1 * torch.sum(rnn_loss + noise_loss)
+            if self.size_average:
+                loss = loss / length
+            return loss
         else:
-            pass
-        if self.size_average:
-            loss = loss / length
-
-        return loss
+            out = self.decoder(input)
+            return out
 
     def _get_prob(self, embedding, target_idx, noise_idx):
         """Get the NCE estimated probability for target and noise
