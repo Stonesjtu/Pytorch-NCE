@@ -64,10 +64,8 @@ class PaddedDataset(Dataset):
         assert os.path.exists(path)
         # Add words to the dictionary
         with open(path, 'r') as f:
-            tokens = 0
             for line in f:
                 words = line.split() + ['<eos>']
-                tokens += len(words)
                 for word in words:
                     self.dictionary.add_word(word)
 
