@@ -65,15 +65,15 @@ class NCELoss(nn.Module):
             the scalar NCELoss Variable ready for backward
         """
 
+        length = target.size(0)
         if self.training:
             assert input.size(0) == target.size(0)
-            length = target.size(0)
 
             noise_samples = torch.multinomial(
                 self.noise,
-                self.noise_ratio * length,
+                self.noise_ratio,
                 replacement=True
-            ).view(length, -1)
+            ).unsqueeze(0).repeat(length, 1)
             data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
             noise_probs = Variable(
                 self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
@@ -88,12 +88,15 @@ class NCELoss(nn.Module):
             )
 
             loss = -1 * torch.sum(rnn_loss + noise_loss)
-            if self.size_average:
-                loss = loss / length
-            return loss
+
         else:
-            out = self.decoder(input)
-            return out
+            out = self.decoder(input, indices=target.unsqueeze(1))
+            nll = out.sub(self.norm_term)
+            loss = -1 * nll.sum()
+
+        if self.size_average:
+            loss = loss / length
+        return loss
 
     def _get_prob(self, embedding, target_idx, noise_idx):
         """Get the NCE estimated probability for target and noise
@@ -105,7 +108,9 @@ class NCELoss(nn.Module):
         """
 
         embedding = embedding
-        indices = torch.cat([target_idx.unsqueeze(1), noise_idx], dim=1)
+        indices = Variable(
+            torch.cat([target_idx.unsqueeze(1), noise_idx], dim=1)
+        )
         probs = self.decoder(embedding, indices)
 
         probs = probs.sub(self.norm_term).exp()
@@ -116,6 +121,7 @@ class IndexLinear(nn.Linear):
     """A linear layer that only decodes the results of provided indices
 
     Args:
+        input: the list of embedding
         indices: the indices of interests.
 
     Shape:
@@ -136,14 +142,12 @@ class IndexLinear(nn.Linear):
             return super(IndexLinear, self).forward(input)
         # the pytorch's [] operator BP can't correctly
         input = input.unsqueeze(1)
-        indices = Variable(indices)
         target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
         bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
         out = torch.baddbmm(1, bias, 1, input, target_batch)
         return out.squeeze()
 
     def reset_parameters(self):
-        print('initing IndexLinear parameters')
         init_range = 0.1
         self.bias.data.fill_(0)
         self.weight.data.uniform_(-init_range, init_range)

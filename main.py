@@ -147,19 +147,20 @@ def mask_gen(lengths, cuda=False):
     return mask
 
 
-def corpus_gen(data_batch, cuda=False):
+def corpus_gen(data_batch, cuda=True, eval=False):
     data, target, length = data_batch
     if cuda:
         data = data.cuda()
         target = target.cuda()
         length = length.cuda()
+
     length, idx = torch.sort(length, dim=0, descending=True)
     max_len = length[0]
     data = data.index_select(0, idx)
     data = data[:, :max_len]
     target = target.index_select(0, idx)
     target = target[:, :max_len]
-    data = Variable(data)
+    data = Variable(data, volatile=eval)
     target = Variable(target)
 
     return data, target, length
@@ -173,9 +174,9 @@ def eval_cross_entropy(output, target, length):
         mask.unsqueeze(dim=2).expand_as(output)
     )
     target = target.masked_select(mask)
-    cur_loss = criterion(
+    cur_loss = nce_criterion(
         output.view(target.size(0), -1),
-        target.contiguous(),
+        target,
     ).data
     return cur_loss[0] * length.sum()
 
@@ -187,16 +188,15 @@ def evaluate(data_source):
     eval_loss = 0
     total_length = 0
 
+    data_source.batch_size = 32
     for data_batch in data_source:
-        data, target, length = corpus_gen(data_batch)
+        data, target, length = corpus_gen(data_batch, eval=True)
 
         if args.cuda:
             data = data.contiguous().cuda(async=True)
             target = target.contiguous().cuda(async=True)
 
-        output = model(data, length).contiguous().view(target.numel(), args.emsize)
-        output = nce_criterion(output)
-        output = output.view(target.size(0), target.size(1), -1)
+        output = model(data, length).contiguous().view(target.size(0), target.size(1), args.emsize)
 
         eval_loss += eval_cross_entropy(output, target, length)
         total_length += length.sum()
@@ -224,7 +224,7 @@ def train():
         if args.prof and batch == 10:
             break
         optimizer.zero_grad()
-        data, target, length = corpus_gen(data_batch, args.cuda)
+        data, target, length = corpus_gen(data_batch, cuda=args.cuda)
         mask = Variable(mask_gen(length, args.cuda))
 
         output = model(data, length)
