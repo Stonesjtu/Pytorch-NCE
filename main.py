@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
 
-import data
+import data_sms as data
 import model
 import nce
 
