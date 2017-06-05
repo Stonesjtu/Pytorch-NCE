@@ -66,7 +66,7 @@ class PaddedDataset(Dataset):
         # Add words to the dictionary
         with open(dict_path, 'r') as f:
             for line in f:
-                self.dictionary.add_word(line)
+                self.dictionary.add_word(line.rstrip())
 
         self.dictionary.add_word('<eos>')
         self.dictionary.add_word('<unk>')
