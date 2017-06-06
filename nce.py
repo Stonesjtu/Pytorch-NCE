@@ -3,6 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
+from alias_multinomial import AliasMethod
 
 
 class NCELoss(nn.Module):
@@ -41,6 +42,7 @@ class NCELoss(nn.Module):
         super(NCELoss, self).__init__()
 
         self.noise = noise
+        self.alias = AliasMethod(noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
         self.ntokens = ntokens
@@ -69,11 +71,7 @@ class NCELoss(nn.Module):
         if self.training:
             assert input.size(0) == target.size(0)
 
-            noise_samples = torch.multinomial(
-                self.noise,
-                self.noise_ratio,
-                replacement=True
-            ).unsqueeze(0).repeat(length, 1)
+            noise_samples = self.alias.draw(self.noise_ratio).cuda().unsqueeze(0).repeat(length, 1)
             data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
             noise_probs = Variable(
                 self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
