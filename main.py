@@ -7,9 +7,10 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
 
-import data_sms as data
+import data as data
 import model
 import nce
+import crossEntropy
 
 def setup_parser():
     parser = argparse.ArgumentParser(
@@ -120,16 +121,22 @@ noise = build_unigram_noise(
 if args.cuda:
     noise = noise.cuda()
 
-nce_criterion = nce.NCELoss(
-    ntokens=ntokens,
-    emb_size=args.emsize,
-    noise=noise,
-    noise_ratio=args.noise_ratio,
-    norm_term=args.norm_term,
-)
+if args.nce:
+    criterion = nce.NCELoss(
+        ntokens=ntokens,
+        emb_size=args.emsize,
+        noise=noise,
+        noise_ratio=args.noise_ratio,
+        norm_term=args.norm_term,
+    )
+else:
+    criterion = crossEntropy.CELoss(
+        ntokens=ntokens,
+        emb_size=args.emsize,
+    )
 
 if args.cuda:
-    nce_criterion.cuda()
+    criterion.cuda()
 
 ###############################################################################
 # Training code
@@ -174,7 +181,7 @@ def eval_cross_entropy(output, target, length):
         mask.unsqueeze(dim=2).expand_as(output)
     )
     target = target.masked_select(mask)
-    cur_loss = nce_criterion(
+    cur_loss = criterion(
         output.view(target.size(0), -1),
         target,
     ).data
@@ -184,7 +191,7 @@ def eval_cross_entropy(output, target, length):
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    nce_criterion.eval()
+    criterion.eval()
     eval_loss = 0
     total_length = 0
 
@@ -207,13 +214,13 @@ def evaluate(data_source):
 def train():
     params = [
         {'params': model.parameters()},
-        {'params': nce_criterion.parameters()},
+        {'params': criterion.parameters()},
     ]
     optimizer = optim.SGD(params=params, lr=lr,
                           momentum=0.9, weight_decay=1e-5)
     # Turn on training mode which enables dropout.
     model.train()
-    nce_criterion.train()
+    criterion.train()
     total_loss = 0
     start_time = time.time()
     batch = 0
@@ -234,7 +241,7 @@ def train():
 
 
         target = target.masked_select(mask)
-        loss = nce_criterion(
+        loss = criterion(
             output.view(target.size(0), args.emsize),
             target,
         )
@@ -242,7 +249,7 @@ def train():
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        torch.nn.utils.clip_grad_norm(nce_criterion.parameters(), args.clip)
+        torch.nn.utils.clip_grad_norm(criterion.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.data
