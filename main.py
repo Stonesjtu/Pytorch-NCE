@@ -273,6 +273,8 @@ if __name__ == '__main__':
         for epoch in range(1, args.epochs + 1):
             epoch_start_time = time.time()
             train()
+            with open(args.save+'.epoch_'+epoch, 'wb') as f:
+                torch.save(model, f)
             val_ppl = evaluate(corpus.valid)
             print('-' * 89)
             print('| end of epoch {:3d} | time: {:5.2f}s |'
