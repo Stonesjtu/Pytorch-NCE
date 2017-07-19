@@ -1,8 +1,19 @@
 This NCE module if forked from the pytorch/examples repo.
 
-new arguments
+new arguments:
+  - `noise_ratio`: numbers of noise samples per data sample
+  - `norm_term`: the constant normalization term `Ln(z)`
+
+### examples
+
+Run NCE criterion:
 ```bash
-python main.py --noise_ratio 10 --norm_term 9
+python main.py --noise_ratio 10 --norm_term 9 --nce
+```
+
+Run conventional CE criterion:
+```bash
+python main.py
 ```
 
 # Word-level language modeling RNN
