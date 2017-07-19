@@ -55,5 +55,3 @@ class CELoss(nn.Module):
         loss = self.criterion(output, target)
         return loss
 
-
-
