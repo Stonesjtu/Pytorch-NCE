@@ -66,6 +66,7 @@ def setup_parser():
 
 parser = setup_parser()
 args = parser.parse_args()
+print(args)
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -105,8 +106,6 @@ model = model.RNNModel(args.model, ntokens, args.emsize,
 print(model)
 if args.cuda:
     model.cuda()
-
-criterion = nn.CrossEntropyLoss()
 
 def build_unigram_noise(freq):
     """build the unigram noise from a list of frequency
