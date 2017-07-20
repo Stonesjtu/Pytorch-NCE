@@ -33,8 +33,16 @@ class Dictionary(object):
             self.idx2word.append(word)
             self.word2idx[word] = len(self.idx2word) - 1
             self.idx2count.append(0)
-        self.idx2count[self.word2idx[word]] += 1
-        return self.word2idx[word]
+
+    def incre_count(self, idx):
+        self.idx2count[idx] += 1
+
+    def trunc_special(self):
+        """Do not count special characters as `<s>` `</s>`"""
+        special_words = ['<s>', '</s>']
+        for word in special_words:
+            idx = self.word2idx[word]
+            self.idx2count[idx] = 0
 
     def __len__(self):
         return len(self.idx2word)
@@ -76,7 +84,7 @@ class PaddedDataset(Dataset):
             with open(self.dict_path, 'r') as f:
                 for line in f:
                     self.dictionary.add_word(line.split()[0])
-            self.dictionary.add_word('<s>')
+
 
         # Use train corpus
         else:
@@ -84,18 +92,28 @@ class PaddedDataset(Dataset):
             # Add words to the dictionary
             with open(self.file_path, 'r') as f:
                 for line in f:
-                    words = ['<s>'] + line.split() + ['</s>']
+                    words = line.split()
                     for word in words:
                         self.dictionary.add_word(word)
 
+        # Ensure the special characters are in vocabulary
+        self.dictionary.add_word('<s>')
+        self.dictionary.add_word('</s>')
         self.dictionary.add_word('<unk>')
 
 
     def get_index(self, word):
+        """Get indices in vocabulary
+
+        At the same time, this function will increase the word count by 1
+        """
         if word in self.dictionary.word2idx:
-            return self.dictionary.word2idx[word]
+            idx = self.dictionary.word2idx[word]
         else:
-            return self.dictionary.word2idx['<unk>']
+            idx = self.dictionary.word2idx['<unk>']
+
+        self.dictionary.incre_count(idx)
+        return idx
 
 
     def tokenize(self, path):
@@ -105,11 +123,12 @@ class PaddedDataset(Dataset):
             sentences = []
             lengths = []
             for line in f:
-                words = line.split() + ['<eos>']
+                words = ['<s>'] + line.split() + ['</s>']
                 lengths.append(len(words))
                 sentence = torch.LongTensor(
                     [self.get_index(word) for word in words])
                 sentences.append(sentence)
+        self.dictionary.trunc_special()
         lengths = torch.ShortTensor(lengths)
         padded_sentences = zero_padding(sentences, lengths)
         return padded_sentences, lengths
