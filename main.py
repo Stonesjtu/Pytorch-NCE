@@ -55,6 +55,8 @@ def setup_parser():
                         help='set the noise ratio of NCE sampling')
     parser.add_argument('--norm_term', type=int, default=9,
                         help='set the log normalization term of NCE sampling')
+    parser.add_arguments('--train', action='store_true',
+                        help='set train mode, otherwise only evaluation is performed')
     return parser
 
 
@@ -124,7 +126,7 @@ if args.cuda:
 if args.nce:
     criterion = nce.NCELoss(
         ntokens=ntokens,
-        emb_size=args.emsize,
+        nhidden=args.nhid,
         noise=noise,
         noise_ratio=args.noise_ratio,
         norm_term=args.norm_term,
@@ -132,7 +134,7 @@ if args.nce:
 else:
     criterion = crossEntropy.CELoss(
         ntokens=ntokens,
-        emb_size=args.emsize,
+        nhidden=args.nhid,
     )
 
 if args.cuda:
@@ -203,7 +205,7 @@ def evaluate(data_source):
             data = data.contiguous().cuda(async=True)
             target = target.contiguous().cuda(async=True)
 
-        output = model(data, length).contiguous().view(target.size(0), target.size(1), args.emsize)
+        output = model(data, length).contiguous().view(target.size(0), target.size(1), args.nhid)
 
         eval_loss += eval_cross_entropy(output, target, length)
         total_length += length.sum()
@@ -242,7 +244,7 @@ def train():
 
         target = target.masked_select(mask)
         loss = criterion(
-            output.view(target.size(0), args.emsize),
+            output.view(target.size(0), args.nhid),
             target,
         )
         loss.backward()
@@ -276,35 +278,37 @@ if __name__ == '__main__':
     best_val_ppl = None
 
     # At any point you can hit Ctrl + C to break out of training early.
-    try:
-        for epoch in range(1, args.epochs + 1):
-            epoch_start_time = time.time()
-            train()
-            with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
-                torch.save(model, f)
-            val_ppl = evaluate(corpus.valid)
-            print('-' * 89)
-            print('| end of epoch {:3d} | time: {:5.2f}s |'
-                  'valid ppl {:8.2f}'.format(epoch,
-                                             (time.time() - epoch_start_time),
-                                             val_ppl))
-            print('-' * 89)
-            # Save the model if the validation loss is the best we've seen so far.
-            if not best_val_ppl or val_ppl < best_val_ppl:
-                with open(args.save, 'wb') as f:
+    if args.train:
+        try:
+            for epoch in range(1, args.epochs + 1):
+                epoch_start_time = time.time()
+                train()
+                with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
-                best_val_ppl = val_ppl
-            else:
-                # Anneal the learning rate if no improvement has been seen in the
-                # validation dataset.
-                lr /= 2.0
-    except KeyboardInterrupt:
-        print('-' * 89)
-        print('Exiting from training early')
+                val_ppl = evaluate(corpus.valid)
+                print('-' * 89)
+                print('| end of epoch {:3d} | time: {:5.2f}s |'
+                    'valid ppl {:8.2f}'.format(epoch,
+                                                (time.time() - epoch_start_time),
+                                                val_ppl))
+                print('-' * 89)
+                # Save the model if the validation loss is the best we've seen so far.
+                if not best_val_ppl or val_ppl < best_val_ppl:
+                    with open(args.save, 'wb') as f:
+                        torch.save(model, f)
+                    best_val_ppl = val_ppl
+                else:
+                    # Anneal the learning rate if no improvement has been seen in the
+                    # validation dataset.
+                    lr /= 2.0
+        except KeyboardInterrupt:
+            print('-' * 89)
+            print('Exiting from training early')
 
-    # Load the best saved model.
-    with open(args.save, 'rb') as f:
-        model = torch.load(f)
+    else:
+        # Load the best saved model.
+        with open(args.save, 'rb') as f:
+            model = torch.load(f)
 
     # Run on test data.
     test_ppl = evaluate(corpus.test)

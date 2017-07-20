@@ -17,7 +17,7 @@ class NCELoss(nn.Module):
         https://core.ac.uk/download/pdf/42338485.pdf
 
     Attributes:
-        emb_size: embedding size
+        nhidden: hidden size of LSTM(a.k.a the output size)
         ntokens: vocabulary size
         noise: the distribution of noise
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
@@ -32,7 +32,7 @@ class NCELoss(nn.Module):
 
     def __init__(self,
                  ntokens,
-                 emb_size,
+                 nhidden,
                  noise,
                  noise_ratio=10,
                  norm_term=9,
@@ -47,7 +47,7 @@ class NCELoss(nn.Module):
         self.norm_term = norm_term
         self.ntokens = ntokens
         self.size_average = size_average
-        self.decoder = IndexLinear(emb_size, ntokens)
+        self.decoder = IndexLinear(nhidden, ntokens)
         # Weight tying
         if decoder_weight:
             self.decoder.weight = decoder_weight

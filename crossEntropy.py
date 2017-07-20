@@ -11,7 +11,7 @@ class CELoss(nn.Module):
     I bundle together CrossEntropyLoss function and decoder matrix.
 
     Attributes:
-        emb_size: embedding size
+        nhidden: hidden size of LSTM(a.k.a the output size)
         ntokens: vocabulary size
         size_average: average the loss by batch size
         decoder: the decoder matrix
@@ -22,7 +22,7 @@ class CELoss(nn.Module):
 
     def __init__(self,
                  ntokens,
-                 emb_size,
+                 nhidden,
                  size_average=True,
                  decoder_weight=None,
                  ):
@@ -30,7 +30,7 @@ class CELoss(nn.Module):
 
         self.ntokens = ntokens
         self.size_average = size_average
-        self.decoder = nn.Linear(emb_size, ntokens)
+        self.decoder = nn.Linear(nhidden, ntokens)
         self.criterion = nn.CrossEntropyLoss()
         # Weight tying
         if decoder_weight:
