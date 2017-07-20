@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+
+import sys
 import argparse
 import time
 import math
@@ -315,3 +317,4 @@ if __name__ == '__main__':
     print('=' * 89)
     print('| End of training | test ppl {:8.2f}'.format(test_ppl))
     print('=' * 89)
+    sys.stdout.flush()
