@@ -1,4 +1,5 @@
-#  data utils of this language model: corpus reader and noise data generator
+# data utils of this language model: corpus reader and noise data generator
+
 import os
 import torch
 from torch.utils.data.dataset import Dataset
@@ -41,33 +42,60 @@ class Dictionary(object):
 
 class PaddedDataset(Dataset):
     """dataset that zero-pads all sentence into same length
-    Parameters:
+    Attributes:
+        dict_path: dictionary file, one word each line
         file_path: the directory of all train, test and valid corpus
+
+    Parameters:
         dictionary: a word-to-index mapping, will build a new one if not provided
     """
-    def __init__(self, file_path, dictionary=None):
+    def __init__(self, file_path, dictionary=None, dict_path=None):
         super(PaddedDataset, self).__init__()
+        self.file_path = file_path
+        self.dict_path = dict_path
 
         self.dictionary = Dictionary()
         if not dictionary:
-            self._build_dict(file_path)
+            self._build_dict()
         else:
             self.dictionary = dictionary
         self.file_path = file_path
         self.data, self.lengths = self.tokenize(file_path)
 
-    def _build_dict(self, path):
+    def _build_dict(self):
         """build the dictionary before the training phase
-        Parameters:
-            path: training corpus location
+
+        If dictionary file is provided, then use it directly.
+        Otherwise use every words in train corpus.
         """
-        assert os.path.exists(path)
-        # Add words to the dictionary
-        with open(path, 'r') as f:
-            for line in f:
-                words = line.split() + ['<eos>']
-                for word in words:
-                    self.dictionary.add_word(word)
+
+        # Use existing vocabulary file to construct dict
+        if self.dict_path:
+            assert os.path.exists(self.dict_path)
+            # Add words to the dictionary
+            with open(self.dict_path, 'r') as f:
+                for line in f:
+                    self.dictionary.add_word(line.split()[0])
+            self.dictionary.add_word('<s>')
+
+        # Use train corpus
+        else:
+            assert os.path.exists(self.file_path)
+            # Add words to the dictionary
+            with open(self.file_path, 'r') as f:
+                for line in f:
+                    words = ['<s>'] + line.split() + ['</s>']
+                    for word in words:
+                        self.dictionary.add_word(word)
+
+        self.dictionary.add_word('<unk>')
+
+
+    def get_index(self, word):
+        if word in self.dictionary.word2idx:
+            return self.dictionary.word2idx[word]
+        else:
+            return self.dictionary.word2idx['<unk>']
 
 
     def tokenize(self, path):
@@ -80,7 +108,7 @@ class PaddedDataset(Dataset):
                 words = line.split() + ['<eos>']
                 lengths.append(len(words))
                 sentence = torch.LongTensor(
-                    [self.dictionary.word2idx[word] for word in words])
+                    [self.get_index(word) for word in words])
                 sentences.append(sentence)
         lengths = torch.ShortTensor(lengths)
         padded_sentences = zero_padding(sentences, lengths)
@@ -98,12 +126,12 @@ class PaddedDataset(Dataset):
 
 
 class Corpus(object):
-    def __init__(self, path, batch_size=1, shuffle=False, pin_memory=False):
+    def __init__(self, path, dict_path=None, batch_size=1, shuffle=False, pin_memory=False):
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.pin_memory = pin_memory
         self.train = self.get_dataloader(
-            PaddedDataset(os.path.join(path, 'train.txt'))
+            PaddedDataset(os.path.join(path, 'train.txt'), dict_path=dict_path)
         )
         self.dict = self.train.dataset.dictionary
         self.valid = self.get_dataloader(

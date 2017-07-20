@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
 
-import data as data
+import data
 import model
 import nce
 import crossEntropy
@@ -19,6 +19,8 @@ def setup_parser():
         description='PyTorch PennTreeBank RNN/LSTM Language Model')
     parser.add_argument('--data', type=str, default='./data/penn',
                         help='location of the data corpus')
+    parser.add_argument('--dict', type=str, default=None,
+                        help='location of the vocabulary file, without which will use vocab of training corpus')
     parser.add_argument('--model', type=str, default='LSTM',
                         help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
     parser.add_argument('--emsize', type=int, default=200,
@@ -78,7 +80,8 @@ if torch.cuda.is_available():
 ###############################################################################
 
 corpus = data.Corpus(
-    args.data,
+    path=args.data,
+    dict_path=args.dict,
     batch_size=args.batch_size,
     shuffle=True,
     pin_memory=args.cuda,
