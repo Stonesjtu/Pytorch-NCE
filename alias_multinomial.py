@@ -6,17 +6,18 @@ class AliasMethod(object):
         From: https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
     '''
     def __init__(self, probs):
+
         K = len(probs)
-        self.q = torch.zeros(K)
-        self.J = torch.LongTensor([0]*K)
+        self.prob = torch.zeros(K)
+        self.alias = torch.LongTensor([0]*K)
 
         # Sort the data into the outcomes with probabilities
         # that are larger and smaller than 1/K.
         smaller = []
         larger = []
         for kk, prob in enumerate(probs):
-            self.q[kk] = K*prob
-            if self.q[kk] < 1.0:
+            self.prob[kk] = K*prob
+            if self.prob[kk] < 1.0:
                 smaller.append(kk)
             else:
                 larger.append(kk)
@@ -28,29 +29,31 @@ class AliasMethod(object):
             small = smaller.pop()
             large = larger.pop()
 
-            self.J[small] = large
-            self.q[large] = (self.q[large] - 1.0) + self.q[small]
+            self.alias[small] = large
+            self.prob[large] = (self.prob[large] - 1.0) + self.prob[small]
 
-            if self.q[large] < 1.0:
+            if self.prob[large] < 1.0:
                 smaller.append(large)
             else:
                 larger.append(large)
 
-        self.q.clamp(0,1)
-        self.J.clamp(0,K-1)
+        for last_one in smaller+larger:
+            self.prob[last_one] = 1
+        print('==smaller{}\n===larger{}\n'.format(smaller, larger))
 
     def draw(self, N):
         '''
             Draw N samples from multinomial
         '''
-        K = self.J.size(0)
+        K = self.alias.size(0)
 
-        r = torch.LongTensor(np.random.randint(0,K, size=N))
-        q = self.q.index_select(0, r)
-        j = self.J.index_select(0, r)
-        b = torch.bernoulli(q)
-        oq = r.mul(b.long())
-        oj = j.mul((1-b).long())
+        kk = torch.LongTensor(np.random.randint(0,K, size=N))
+        prob = self.prob.index_select(0, kk)
+        alias = self.alias.index_select(0, kk)
+        # b is whether a random number is greater than q
+        b = torch.bernoulli(prob)
+        oq = kk.mul(b.long())
+        oj = alias.mul((1-b).long())
 
         return oq + oj
 

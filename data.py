@@ -38,8 +38,8 @@ class Dictionary(object):
         self.idx2count[idx] += 1
 
     def trunc_special(self):
-        """Do not count special characters as `<s>` `</s>`"""
-        special_words = ['<s>', '</s>']
+        """Do not count special characters as `<s>` """
+        special_words = ['<s>']
         for word in special_words:
             idx = self.word2idx[word]
             self.idx2count[idx] = 0
