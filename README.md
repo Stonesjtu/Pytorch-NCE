@@ -1,19 +1,22 @@
 This NCE module if forked from the pytorch/examples repo.
 
 new arguments:
-  - `noise_ratio`: numbers of noise samples per data sample
-  - `norm_term`: the constant normalization term `Ln(z)`
+  - `--nce`: whether to use NCE as approximation
+  - `--noise_ratio <10>`: numbers of noise samples per data sample
+  - `--norm_term <9>`: the constant normalization term `Ln(z)`
+  - `--train`: train or just evaluation existing model
+  - `--dict <None>`: use vocabulary file if specified, otherwise use the words in train.txt
 
 ### examples
 
 Run NCE criterion:
 ```bash
-python main.py --noise_ratio 10 --norm_term 9 --nce
+python main.py --cuda --noise_ratio 10 --norm_term 9 --nce --train
 ```
 
 Run conventional CE criterion:
 ```bash
-python main.py
+python main.py --cuda --train
 ```
 
 # Word-level language modeling RNN
