@@ -39,7 +39,6 @@ class AliasMethod(object):
 
         for last_one in smaller+larger:
             self.prob[last_one] = 1
-        print('==smaller{}\n===larger{}\n'.format(smaller, larger))
 
     def draw(self, N):
         '''
