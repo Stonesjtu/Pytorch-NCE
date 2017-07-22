@@ -34,7 +34,7 @@ class CELoss(nn.Module):
         self.criterion = nn.CrossEntropyLoss()
         # Weight tying
         if decoder_weight:
-            self.decoder.weight = decoder_weight
+            self.decoder.weight, self.decoder.bias = decoder_weight
 
     def forward(self, input, target):
         """compute the loss with output and the desired target

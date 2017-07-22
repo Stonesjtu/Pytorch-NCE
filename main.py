@@ -141,8 +141,15 @@ else:
         nhidden=args.nhid,
     )
 
+
 if args.cuda:
     criterion.cuda()
+
+evaluate_criterion = crossEntropy.CELoss(
+    ntokens=ntokens,
+    nhidden=args.nhid,
+    decoder_weight=(criterion.decoder.weight, criterion.decoder.bias),
+)
 
 ###############################################################################
 # Training code
@@ -187,7 +194,7 @@ def eval_cross_entropy(output, target, length):
         mask.unsqueeze(dim=2).expand_as(output)
     )
     target = target.masked_select(mask)
-    cur_loss = criterion(
+    cur_loss = evaluate_criterion(
         output.view(target.size(0), -1),
         target,
     ).data
@@ -198,6 +205,7 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     criterion.eval()
+    evaluate_criterion.eval()
     eval_loss = 0
     total_length = 0
 
