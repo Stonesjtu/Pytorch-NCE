@@ -38,6 +38,7 @@ class NCELoss(nn.Module):
                  norm_term=9,
                  size_average=True,
                  decoder_weight=None,
+                 per_word=True,
                  ):
         super(NCELoss, self).__init__()
 
@@ -47,6 +48,7 @@ class NCELoss(nn.Module):
         self.norm_term = norm_term
         self.ntokens = ntokens
         self.size_average = size_average
+        self.per_word = per_word
         self.decoder = IndexLinear(nhidden, ntokens)
         # Weight tying
         if decoder_weight:
@@ -71,15 +73,18 @@ class NCELoss(nn.Module):
         if self.training:
             assert input.size(0) == target.size(0)
 
-            noise_samples = self.alias.draw(self.noise_ratio).cuda().unsqueeze(0).repeat(length, 1)
+            if self.per_word:
+                noise_samples = self.alias.draw(self.noise_ratio * length).cuda().view(length, -1)
+            else:
+                noise_samples = self.alias.draw(self.noise_ratio).cuda().unsqueeze(0).repeat(length, 1)
             data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
             noise_probs = Variable(
                 self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
             )
 
             rnn_loss = torch.log(data_prob / (
-                data_prob + self.noise_ratio * Variable(self.noise[target.data]
-            )))
+                data_prob + self.noise_ratio * Variable(self.noise[target.data])
+            ))
 
             noise_loss = torch.sum(
                 torch.log((self.noise_ratio * noise_probs) / (noise_in_data_probs + self.noise_ratio * noise_probs)), 1
