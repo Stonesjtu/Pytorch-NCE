@@ -3,12 +3,16 @@
 import sys
 import argparse
 import time
+from datetime import datetime
 import math
 from itertools import chain
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
+
+from tensorboard import SummaryWriter
 
 import data
 import model
@@ -68,6 +72,12 @@ def setup_parser():
 parser = setup_parser()
 args = parser.parse_args()
 print(args)
+
+# Initialize tensor-board summary writer
+writer = SummaryWriter('runs/{}{}'.format(
+    datetime.now().strftime('%B%d %H:%M:%S'),
+    args,
+))
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -299,6 +309,7 @@ if __name__ == '__main__':
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
                 val_ppl = evaluate(corpus.valid)
+                writer.add_scalar('valid_PPL', val_ppl, epoch)
                 print('-' * 89)
                 print('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
@@ -322,6 +333,8 @@ if __name__ == '__main__':
         # Load the best saved model.
         with open(args.save, 'rb') as f:
             model = torch.load(f)
+
+    writer.close()
 
     # Run on test data.
     test_ppl = evaluate(corpus.test)
