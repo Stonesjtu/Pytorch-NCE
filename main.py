@@ -56,8 +56,6 @@ def setup_parser():
                         help='report interval')
     parser.add_argument('--save', type=str, default='model.pt',
                         help='path to save the final model')
-    parser.add_argument('--prof', action='store_true',
-                        help='runs a few iteration with profiling tools')
     parser.add_argument('--nce', action='store_true',
                         help='use NCE as loss function')
     parser.add_argument('--noise_ratio', type=int, default=10,
@@ -66,6 +64,8 @@ def setup_parser():
                         help='set the log normalization term of NCE sampling')
     parser.add_argument('--train', action='store_true',
                         help='set train mode, otherwise only evaluation is performed')
+    parser.add_argument('--name', type=str, default=None,
+                        help='the name which would be used in tensorboard record')
     return parser
 
 
@@ -74,9 +74,12 @@ args = parser.parse_args()
 print(args)
 
 # Initialize tensor-board summary writer
-writer = SummaryWriter('runs/{}{}'.format(
+exp_name = '{} {}'.format(
     datetime.now().strftime('%B%d %H:%M:%S'),
-    args,
+    args.exp_name if args.exp_name else args,
+)
+writer = SummaryWriter('runs/{}'.format(
+    exp_name,
 ))
 
 # Set the random seed manually for reproducibility.
