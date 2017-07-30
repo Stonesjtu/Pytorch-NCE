@@ -12,8 +12,6 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.optim as optim
 
-from tensorboard import SummaryWriter
-
 import data
 import model
 import nce
@@ -64,7 +62,7 @@ def setup_parser():
                         help='set the log normalization term of NCE sampling')
     parser.add_argument('--train', action='store_true',
                         help='set train mode, otherwise only evaluation is performed')
-    parser.add_argument('--name', type=str, default=None,
+    parser.add_argument('--tb_name', type=str, default=None,
                         help='the name which would be used in tensorboard record')
     return parser
 
@@ -74,13 +72,15 @@ args = parser.parse_args()
 print(args)
 
 # Initialize tensor-board summary writer
-exp_name = '{} {}'.format(
-    datetime.now().strftime('%B%d %H:%M:%S'),
-    args.exp_name if args.exp_name else args,
-)
-writer = SummaryWriter('runs/{}'.format(
-    exp_name,
-))
+if args.tb_name:
+    from tensorboard import SummaryWriter
+    exp_name = '{} {}'.format(
+        datetime.now().strftime('%B%d %H:%M:%S'),
+        args.tb_name,
+    )
+    writer = SummaryWriter('runs/{}'.format(
+        exp_name,
+    ))
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -256,8 +256,6 @@ def train():
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to
         # start of the dataset.
-        if args.prof and batch == 10:
-            break
         optimizer.zero_grad()
         data, target, length = corpus_gen(data_batch, cuda=args.cuda)
         mask = Variable(mask_gen(length, args.cuda))
@@ -312,7 +310,8 @@ if __name__ == '__main__':
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
                 val_ppl = evaluate(corpus.valid)
-                writer.add_scalar('valid_PPL', val_ppl, epoch)
+                if args.tb_name:
+                    writer.add_scalar('valid_PPL', val_ppl, epoch)
                 print('-' * 89)
                 print('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
@@ -337,11 +336,13 @@ if __name__ == '__main__':
         with open(args.save, 'rb') as f:
             model = torch.load(f)
 
-    writer.close()
-
     # Run on test data.
     test_ppl = evaluate(corpus.test)
     print('=' * 89)
     print('| End of training | test ppl {:8.2f}'.format(test_ppl))
     print('=' * 89)
     sys.stdout.flush()
+
+    if args.tb_name:
+        writer.close()
+
