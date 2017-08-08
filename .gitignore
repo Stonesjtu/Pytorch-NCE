@@ -3,8 +3,12 @@ data
 *.pyc
 OpenNMT/data
 .cache
-*.pt
+*.pt*
 *.out
 profiler_out/*
 *.txt
-log
+*log
+*.th*
+basis?/
+runs/
+*.lprof
