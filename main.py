@@ -307,8 +307,6 @@ if __name__ == '__main__':
             for epoch in range(1, args.epochs + 1):
                 epoch_start_time = time.time()
                 train()
-                with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
-                    torch.save(model, f)
                 val_ppl = evaluate(corpus.valid)
                 if args.tb_name:
                     writer.add_scalar('valid_PPL', val_ppl, epoch)
@@ -318,10 +316,16 @@ if __name__ == '__main__':
                                                 (time.time() - epoch_start_time),
                                                 val_ppl))
                 print('-' * 89)
+                with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
+                    torch.save(model, f)
+                with open(args.save+'.criterion.epoch_{}'.format(epoch), 'wb') as f:
+                    torch.save(criterion, f)
                 # Save the model if the validation loss is the best we've seen so far.
                 if not best_val_ppl or val_ppl < best_val_ppl:
                     with open(args.save, 'wb') as f:
                         torch.save(model, f)
+                    with open(args.save+'.criterion', 'wb') as f:
+                        torch.save(criterion, f)
                     best_val_ppl = val_ppl
                 else:
                     # Anneal the learning rate if no improvement has been seen in the
@@ -335,6 +339,8 @@ if __name__ == '__main__':
         # Load the best saved model.
         with open(args.save, 'rb') as f:
             model = torch.load(f)
+        with open(args.save+'.criterion') as f:
+            criterion = torch.load(f)
 
     # Run on test data.
     test_ppl = evaluate(corpus.test)
