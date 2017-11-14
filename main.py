@@ -5,17 +5,15 @@ import argparse
 import time
 from datetime import datetime
 import math
-from itertools import chain
 
 import torch
-import torch.nn as nn
-from torch.autograd import Variable
 import torch.optim as optim
 
 import data
-import model
+from model import RNNModel
 import nce
 import crossEntropy
+from utils import process_data, build_unigram_noise
 
 def setup_parser():
     parser = argparse.ArgumentParser(
@@ -24,8 +22,6 @@ def setup_parser():
                         help='location of the data corpus')
     parser.add_argument('--dict', type=str, default=None,
                         help='location of the vocabulary file, without which will use vocab of training corpus')
-    parser.add_argument('--model', type=str, default='LSTM',
-                        help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
     parser.add_argument('--emsize', type=int, default=200,
                         help='size of word embeddings')
     parser.add_argument('--nhid', type=int, default=200,
@@ -64,6 +60,8 @@ def setup_parser():
                         help='set train mode, otherwise only evaluation is performed')
     parser.add_argument('--tb_name', type=str, default=None,
                         help='the name which would be used in tensorboard record')
+    parser.add_argument('--prof', action='store_true',
+                        help='Enable profiling mode, will execute only one batch data')
     return parser
 
 
@@ -90,10 +88,9 @@ if torch.cuda.is_available():
     else:
         torch.cuda.manual_seed(args.seed)
 
-###############################################################################
+#################################################################
 # Load data
-###############################################################################
-
+#################################################################
 corpus = data.Corpus(
     path=args.data,
     dict_path=args.dict,
@@ -107,39 +104,16 @@ print(corpus.train.dataset.dictionary.idx2word[0])
 
 eval_batch_size = args.batch_size
 
-###############################################################################
-# Build the model
-###############################################################################
+################################################################## Build the criterion and model
+#################################################################
 
 # add the representation for padded index
 ntokens = len(corpus.train.dataset.dictionary)
 print('Vocabulary size is {}'.format(ntokens))
-# add one token for padding
-model = model.RNNModel(args.model, ntokens, args.emsize,
-                       args.nhid, args.nlayers, args.dropout, args.tied)
-print(model)
-if args.cuda:
-    model.cuda()
-
-def build_unigram_noise(freq):
-    """build the unigram noise from a list of frequency
-    Parameters:
-        freq: a tensor of #occurrences of the corresponding index
-    Return:
-        unigram_noise: a torch.Tensor with size ntokens,
-        elements indicate the probability distribution
-    """
-    total = freq.sum()
-    noise = freq / total
-    assert abs(noise.sum() - 1) < 0.001
-    return noise
 
 noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
-
-if args.cuda:
-    noise = noise.cuda()
 
 if args.nce:
     criterion = nce.NCELoss(
@@ -155,144 +129,72 @@ else:
         nhidden=args.nhid,
     )
 
-
-if args.cuda:
-    criterion.cuda()
-
 evaluate_criterion = crossEntropy.CELoss(
     ntokens=ntokens,
     nhidden=args.nhid,
     decoder_weight=(criterion.decoder.weight, criterion.decoder.bias),
 )
 
-###############################################################################
+model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers,
+                 criterion=criterion,
+                 dropout=args.dropout,
+                 tie_weights=args.tied)
+print(model)
+if args.cuda:
+    model.cuda()
+#################################################################
 # Training code
-###############################################################################
+#################################################################
 
 
-def mask_gen(lengths, cuda=False):
-    max_len = lengths[0]
-    size = len(lengths)
-    mask = torch.ByteTensor(size, max_len).zero_()
-    if cuda:
-        mask = mask.cuda()
-    for i in range(size):
-        mask[i][:lengths[i]].fill_(1)
-    return mask
+def train():
+    params = model.parameters()
+    optimizer = optim.SGD(params=params, lr=lr,
+                          momentum=0.9, weight_decay=1e-5)
+    # Turn on training mode which enables dropout.
+    model.train()
+    total_loss = 0
+    for num_batch, data_batch in enumerate(corpus.train):
+        optimizer.zero_grad()
+        data, target, length = process_data(data_batch, cuda=args.cuda)
+        loss = model(data, target, length)
+        loss.backward()
 
+        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+        torch.nn.utils.clip_grad_norm(params, args.clip)
+        optimizer.step()
 
-def corpus_gen(data_batch, cuda=True, eval=False):
-    data, target, length = data_batch
-    if cuda:
-        data = data.cuda()
-        target = target.cuda()
-        length = length.cuda()
+        total_loss += loss.data[0]
 
-    length, idx = torch.sort(length, dim=0, descending=True)
-    max_len = length[0]
-    data = data.index_select(0, idx)
-    data = data[:, :max_len]
-    target = target.index_select(0, idx)
-    target = target[:, :max_len]
-    data = Variable(data, volatile=eval)
-    target = Variable(target)
+        if num_batch % args.log_interval == 0 and num_batch > 0:
+            if args.prof:
+                break
+            cur_loss = total_loss / args.log_interval
+            print('| epoch {:3d} | {:5d}/{:5d} batches'
+                  ' | lr {:02.2f} | '
+                  'loss {:5.2f} | ppl {:8.2f}'.format(
+                      epoch, num_batch, len(corpus.train), lr,
+                      cur_loss, math.exp(cur_loss)))
+            total_loss = 0
+            print('-' * 87)
+        num_batch += 1
 
-    return data, target, length
-
-
-def eval_cross_entropy(output, target, length):
-    mask = Variable(mask_gen(length))
-    if args.cuda:
-        mask = mask.cuda(async=True)
-    output = output.masked_select(
-        mask.unsqueeze(dim=2).expand_as(output)
-    )
-    target = target.masked_select(mask)
-    cur_loss = evaluate_criterion(
-        output.view(target.size(0), -1),
-        target,
-    ).data
-    return cur_loss[0] * length.sum()
-
-
-def evaluate(data_source):
+def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    criterion.eval()
-    evaluate_criterion.eval()
     eval_loss = 0
     total_length = 0
 
     data_source.batch_size = 32
     for data_batch in data_source:
-        data, target, length = corpus_gen(data_batch, eval=True)
+        data, target, length = process_data(data_batch, cuda=cuda, eval=True)
 
-        if args.cuda:
-            data = data.contiguous().cuda(async=True)
-            target = target.contiguous().cuda(async=True)
+        loss = model(data, target, length)
+        cur_length = length.sum()
+        eval_loss += loss.data[0] * cur_length
+        total_length += cur_length
 
-        output = model(data, length).contiguous().view(target.size(0), target.size(1), args.nhid)
-
-        eval_loss += eval_cross_entropy(output, target, length)
-        total_length += length.sum()
-
-    return math.exp(eval_loss / total_length)
-
-
-def train():
-    params = [
-        {'params': model.parameters()},
-        {'params': criterion.parameters()},
-    ]
-    optimizer = optim.SGD(params=params, lr=lr,
-                          momentum=0.9, weight_decay=1e-5)
-    # Turn on training mode which enables dropout.
-    model.train()
-    criterion.train()
-    total_loss = 0
-    start_time = time.time()
-    batch = 0
-    for data_batch in corpus.train:
-        # Starting each batch, we detach the hidden state from how it was previously produced.
-        # If we didn't, the model would try backpropagating all the way to
-        # start of the dataset.
-        optimizer.zero_grad()
-        data, target, length = corpus_gen(data_batch, cuda=args.cuda)
-        mask = Variable(mask_gen(length, args.cuda))
-
-        output = model(data, length)
-        output = output.masked_select(
-            mask.unsqueeze(dim=2).expand_as(output)
-        )
-
-
-        target = target.masked_select(mask)
-        loss = criterion(
-            output.view(target.size(0), args.nhid),
-            target,
-        )
-        loss.backward()
-
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        param_combined = chain.from_iterable([model.parameters(), criterion.parameters()])
-        torch.nn.utils.clip_grad_norm(param_combined, args.clip)
-        optimizer.step()
-
-        total_loss += loss.data
-
-        if batch % args.log_interval == 0 and batch > 0:
-            cur_loss = total_loss[0] / args.log_interval
-            elapsed = time.time() - start_time
-            print('| epoch {:3d} | {:5d}/{:5d} batches'
-                  ' | lr {:02.2f} | ms/batch {:5.2f} | '
-                  'loss {:5.2f} | ppl {:8.2f}'.format(
-                      epoch, batch, len(corpus.train), lr,
-                      elapsed * 1000 / args.log_interval,
-                      cur_loss, math.exp(cur_loss)))
-            total_loss = 0
-            start_time = time.time()
-            print('-' * 87)
-        batch += 1
+    return math.exp(eval_loss/total_length)
 
 
 if __name__ == '__main__':
@@ -307,7 +209,9 @@ if __name__ == '__main__':
             for epoch in range(1, args.epochs + 1):
                 epoch_start_time = time.time()
                 train()
-                val_ppl = evaluate(corpus.valid)
+                if args.prof:
+                    break
+                val_ppl = evaluate(model, corpus.valid)
                 if args.tb_name:
                     writer.add_scalar('valid_PPL', val_ppl, epoch)
                 print('-' * 89)
@@ -318,14 +222,10 @@ if __name__ == '__main__':
                 print('-' * 89)
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
-                with open(args.save+'.criterion.epoch_{}'.format(epoch), 'wb') as f:
-                    torch.save(criterion, f)
                 # Save the model if the validation loss is the best we've seen so far.
                 if not best_val_ppl or val_ppl < best_val_ppl:
                     with open(args.save, 'wb') as f:
                         torch.save(model, f)
-                    with open(args.save+'.criterion', 'wb') as f:
-                        torch.save(criterion, f)
                     best_val_ppl = val_ppl
                 else:
                     # Anneal the learning rate if no improvement has been seen in the
@@ -339,11 +239,9 @@ if __name__ == '__main__':
         # Load the best saved model.
         with open(args.save, 'rb') as f:
             model = torch.load(f)
-        with open(args.save+'.criterion') as f:
-            criterion = torch.load(f)
 
     # Run on test data.
-    test_ppl = evaluate(corpus.test)
+    test_ppl = evaluate(model, corpus.test)
     print('=' * 89)
     print('| End of training | test ppl {:8.2f}'.format(test_ppl))
     print('=' * 89)

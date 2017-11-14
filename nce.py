@@ -42,7 +42,7 @@ class NCELoss(nn.Module):
                  ):
         super(NCELoss, self).__init__()
 
-        self.noise = noise
+        self.register_buffer('noise', noise)
         self.alias = AliasMethod(noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
