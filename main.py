@@ -30,18 +30,18 @@ def setup_parser():
                         help='number of layers')
     parser.add_argument('--lr', type=float, default=1.0,
                         help='initial learning rate')
+    parser.add_argument('--weight-decay', type=float, default=1e-5,
+                        help='initial weight decay')
+    parser.add_argument('--lr-decay', type=float, default=2,
+                        help='learning rate decay when no progress is observed on validation set')
     parser.add_argument('--clip', type=float, default=0.25,
                         help='gradient clipping')
     parser.add_argument('--epochs', type=int, default=40,
                         help='upper epoch limit')
-    parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=20, metavar='N',
                         help='batch size')
-    parser.add_argument('--bptt', type=int, default=35,
-                        help='sequence length')
     parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout applied to layers (0 = no dropout)')
-    parser.add_argument('--tied', action='store_true',
-                        help='tie the word embedding and softmax weights')
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
     parser.add_argument('--cuda', action='store_true',
@@ -52,13 +52,13 @@ def setup_parser():
                         help='path to save the final model')
     parser.add_argument('--nce', action='store_true',
                         help='use NCE as loss function')
-    parser.add_argument('--noise_ratio', type=int, default=10,
+    parser.add_argument('--noise-ratio', type=int, default=10,
                         help='set the noise ratio of NCE sampling')
-    parser.add_argument('--norm_term', type=int, default=9,
+    parser.add_argument('--norm-term', type=int, default=9,
                         help='set the log normalization term of NCE sampling')
     parser.add_argument('--train', action='store_true',
                         help='set train mode, otherwise only evaluation is performed')
-    parser.add_argument('--tb_name', type=str, default=None,
+    parser.add_argument('--tb-name', type=str, default=None,
                         help='the name which would be used in tensorboard record')
     parser.add_argument('--prof', action='store_true',
                         help='Enable profiling mode, will execute only one batch data')
@@ -103,10 +103,10 @@ eval_batch_size = args.batch_size
 ################################################################## Build the criterion and model
 #################################################################
 
-# add the representation for padded index
 ntokens = len(corpus.train.dataset.dictionary)
 print('Vocabulary size is {}'.format(ntokens))
 
+# noise for soise sampling in NCE
 noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
@@ -126,10 +126,10 @@ else:
         nhidden=args.nhid,
     )
 
-model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers,
-                 criterion=criterion,
-                 dropout=args.dropout,
-                 tie_weights=args.tied)
+model = RNNModel(
+    ntokens, args.emsize, args.nhid, args.nlayers,
+    criterion=criterion, dropout=args.dropout,
+)
 if args.cuda:
     model.cuda()
 print(model)
@@ -193,16 +193,16 @@ def evaluate(model, data_source, cuda=args.cuda):
 
 if __name__ == '__main__':
 
-    # Loop over epochs.
     lr = args.lr
     best_val_ppl = None
 
-    # At any point you can hit Ctrl + C to break out of training early.
     if args.train:
+        # At any point you can hit Ctrl + C to break out of training early.
         try:
+            # Loop over epochs.
             for epoch in range(1, args.epochs + 1):
                 epoch_start_time = time.time()
-                train(model, corpus.train, lr=lr)
+                train(model, corpus.train, lr=lr, weight_decay=args.weight_decay)
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
@@ -224,7 +224,7 @@ if __name__ == '__main__':
                 else:
                     # Anneal the learning rate if no improvement has been seen in the
                     # validation dataset.
-                    lr /= 2.0
+                    lr /= args.lr_decay
         except KeyboardInterrupt:
             print('-' * 89)
             print('Exiting from training early')

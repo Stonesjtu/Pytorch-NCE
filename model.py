@@ -7,18 +7,11 @@ from utils import get_mask
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a criterion (decoder and loss function)."""
 
-    def __init__(self, ntoken, ninp, nhid, nlayers, criterion, dropout=0.5, tie_weights=False):
+    def __init__(self, ntoken, ninp, nhid, nlayers, criterion, dropout=0.5):
         super(RNNModel, self).__init__()
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout)
-
-        # Optionally tie weights as in:
-        # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
-        # https://arxiv.org/abs/1608.05859
-        # and
-        # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
-        # https://arxiv.org/abs/1611.01462
 
         self.nhid = nhid
         self.nlayers = nlayers
