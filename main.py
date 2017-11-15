@@ -11,8 +11,8 @@ import torch.optim as optim
 
 import data
 from model import RNNModel
-import nce
-import crossEntropy
+from nce import NCELoss
+from cross_entropy import CELoss
 from utils import process_data, build_unigram_noise
 
 def setup_parser():
@@ -112,7 +112,7 @@ noise = build_unigram_noise(
 )
 
 if args.nce:
-    criterion = nce.NCELoss(
+    criterion = NCELoss(
         ntokens=ntokens,
         nhidden=args.nhid,
         noise=noise,
@@ -121,7 +121,7 @@ if args.nce:
         normed_eval=True, # evaluate PPL using normalized prob
     )
 else:
-    criterion = crossEntropy.CELoss(
+    criterion = CELoss(
         ntokens=ntokens,
         nhidden=args.nhid,
     )
