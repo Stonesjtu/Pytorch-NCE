@@ -24,6 +24,7 @@ class NCELoss(nn.Module):
         norm_term: the normalization term (lnZ in paper)
         size_average: average the loss by batch size
         decoder: the decoder matrix
+        normed_eval: using normalized probability during evaluation
 
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
@@ -37,8 +38,8 @@ class NCELoss(nn.Module):
                  noise_ratio=10,
                  norm_term=9,
                  size_average=True,
-                 decoder_weight=None,
                  per_word=True,
+                 normed_eval=True,
                  ):
         super(NCELoss, self).__init__()
 
@@ -49,10 +50,10 @@ class NCELoss(nn.Module):
         self.ntokens = ntokens
         self.size_average = size_average
         self.per_word = per_word
+        if normed_eval:
+            self.normed_eval = normed_eval
+            self.ce = nn.CrossEntropyLoss(size_average=False)
         self.decoder = IndexLinear(nhidden, ntokens)
-        # Weight tying
-        if decoder_weight:
-            self.decoder.weight = decoder_weight
 
     def forward(self, input, target=None):
         """compute the loss with output and the desired target
@@ -92,6 +93,10 @@ class NCELoss(nn.Module):
 
             loss = -1 * torch.sum(rnn_loss + noise_loss)
 
+        elif self.normed_eval:
+            # Fallback into conventional cross entropy
+            out = self.decoder(input)
+            loss = self.ce(out, target)
         else:
             out = self.decoder(input, indices=target.unsqueeze(1))
             nll = out.sub(self.norm_term)

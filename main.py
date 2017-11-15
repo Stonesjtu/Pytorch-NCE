@@ -99,11 +99,7 @@ corpus = data.Corpus(
     pin_memory=args.cuda,
 )
 
-print(corpus.train.dataset.dictionary.idx2word[0])
-
-
 eval_batch_size = args.batch_size
-
 ################################################################## Build the criterion and model
 #################################################################
 
@@ -122,6 +118,7 @@ if args.nce:
         noise=noise,
         noise_ratio=args.noise_ratio,
         norm_term=args.norm_term,
+        normed_eval=True, # evaluate PPL using normalized prob
     )
 else:
     criterion = crossEntropy.CELoss(
@@ -129,28 +126,26 @@ else:
         nhidden=args.nhid,
     )
 
-evaluate_criterion = crossEntropy.CELoss(
-    ntokens=ntokens,
-    nhidden=args.nhid,
-    decoder_weight=(criterion.decoder.weight, criterion.decoder.bias),
-)
-
 model = RNNModel(ntokens, args.emsize, args.nhid, args.nlayers,
                  criterion=criterion,
                  dropout=args.dropout,
                  tie_weights=args.tied)
-print(model)
 if args.cuda:
     model.cuda()
+print(model)
 #################################################################
 # Training code
 #################################################################
 
 
-def train():
+def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
     params = model.parameters()
-    optimizer = optim.SGD(params=params, lr=lr,
-                          momentum=0.9, weight_decay=1e-5)
+    optimizer = optim.SGD(
+        params=params,
+        lr=lr,
+        momentum=momentum,
+        weight_decay=weight_decay
+    )
     # Turn on training mode which enables dropout.
     model.train()
     total_loss = 0
@@ -177,7 +172,6 @@ def train():
                       cur_loss, math.exp(cur_loss)))
             total_loss = 0
             print('-' * 87)
-        num_batch += 1
 
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
@@ -185,7 +179,7 @@ def evaluate(model, data_source, cuda=args.cuda):
     eval_loss = 0
     total_length = 0
 
-    data_source.batch_size = 32
+    data_source.batch_size = eval_batch_size
     for data_batch in data_source:
         data, target, length = process_data(data_batch, cuda=cuda, eval=True)
 
@@ -208,7 +202,7 @@ if __name__ == '__main__':
         try:
             for epoch in range(1, args.epochs + 1):
                 epoch_start_time = time.time()
-                train()
+                train(model, corpus.train, lr=lr)
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
@@ -249,4 +243,3 @@ if __name__ == '__main__':
 
     if args.tb_name:
         writer.close()
-
