@@ -19,6 +19,10 @@ Run conventional CE criterion:
 python main.py --cuda --train
 ```
 
+### notice
+
+This specific branch `generic-NCE` contains unpublished work of mine.
+
 -----------------
 ### Modified README from Pytorch/examples
 
