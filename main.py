@@ -111,20 +111,17 @@ noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
 
+criterion = NCELoss(
+    ntokens=ntokens,
+    nhidden=args.nhid,
+    noise=noise,
+    noise_ratio=args.noise_ratio,
+    norm_term=args.norm_term,
+)
 if args.nce:
-    criterion = NCELoss(
-        ntokens=ntokens,
-        nhidden=args.nhid,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
-        normed_eval=True, # evaluate PPL using normalized prob
-    )
+    criterion.enable_nce()
 else:
-    criterion = CELoss(
-        ntokens=ntokens,
-        nhidden=args.nhid,
-    )
+    criterion.disable_nce()
 
 model = RNNModel(
     ntokens, args.emsize, args.nhid, args.nlayers,
@@ -139,15 +136,15 @@ print(model)
 
 
 def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    params = model.parameters()
     optimizer = optim.SGD(
-        params=params,
+        params=model.parameters(),
         lr=lr,
         momentum=momentum,
         weight_decay=weight_decay
     )
     # Turn on training mode which enables dropout.
     model.train()
+    model.criterion.enable_nce()
     total_loss = 0
     for num_batch, data_batch in enumerate(corpus.train):
         optimizer.zero_grad()
@@ -156,7 +153,7 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(params, args.clip)
+        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.data[0]
@@ -176,6 +173,7 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
+    model.criterion.disable_nce()
     eval_loss = 0
     total_length = 0
 

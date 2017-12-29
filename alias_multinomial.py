@@ -40,19 +40,19 @@ class AliasMethod(object):
         for last_one in smaller+larger:
             self.prob[last_one] = 1
 
-    def draw(self, N):
+    def draw(self, *size):
         '''
             Draw N samples from multinomial
         '''
         K = self.alias.size(0)
 
-        kk = torch.LongTensor(np.random.randint(0,K, size=N))
-        prob = self.prob.index_select(0, kk)
-        alias = self.alias.index_select(0, kk)
+        kk = torch.LongTensor(np.random.randint(0,K, size=size)).view(-1)
+        prob = self.prob[kk]
+        alias = self.alias[kk]
         # b is whether a random number is greater than q
         b = torch.bernoulli(prob)
         oq = kk.mul(b.long())
         oj = alias.mul((1-b).long())
 
-        return oq + oj
+        return (oq + oj).view(size)
 

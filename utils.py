@@ -27,8 +27,8 @@ def process_data(data_batch, cuda=False, eval=False):
     data = data[:, :max_len]
     target = target.index_select(0, idx)
     target = target[:, :max_len]
-    data = Variable(data, volatile=eval)
-    target = Variable(target)
+    data = Variable(data.contiguous(), volatile=eval)
+    target = Variable(target.contiguous(), requires_grad=False)
     return data, target, length
 
 
