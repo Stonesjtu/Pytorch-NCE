@@ -1,4 +1,4 @@
-This NCE module if forked from the pytorch/examples repo.
+This NCE module if forked from an old pytorch/examples repo.
 
 new arguments:
   - `--nce`: whether to use NCE as approximation
@@ -7,7 +7,7 @@ new arguments:
   - `--train`: train or just evaluation existing model
   - `--dict <None>`: use vocabulary file if specified, otherwise use the words in train.txt
 
-### examples
+### Examples
 
 Run NCE criterion:
 ```bash
@@ -19,7 +19,16 @@ Run conventional CE criterion:
 python main.py --cuda --train
 ```
 
-### notice
+### File structure
+
+- `log/`: some log files of this scripts
+- `nce.py`: the NCE module wrapper
+- `index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
+- `model.py`: the wrapper of all `nn.Module`s.
+- `main.py`: entry point
+- `utils.py`: some util functions for better abstraction
+
+### Notice
 
 This specific branch `generic-NCE` contains unpublished work of mine.
 
