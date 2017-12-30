@@ -12,7 +12,6 @@ import torch.optim as optim
 import data
 from model import RNNModel
 from nce import NCELoss
-from cross_entropy import CELoss
 from utils import process_data, build_unigram_noise
 
 def setup_parser():
@@ -118,10 +117,7 @@ criterion = NCELoss(
     noise_ratio=args.noise_ratio,
     norm_term=args.norm_term,
 )
-if args.nce:
-    criterion.enable_nce()
-else:
-    criterion.disable_nce()
+criterion.nce_mode(args.nce)
 
 model = RNNModel(
     ntokens, args.emsize, args.nhid, args.nlayers,
@@ -144,7 +140,7 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     # Turn on training mode which enables dropout.
     model.train()
-    model.criterion.enable_nce()
+    model.criterion.nce_mode(args.nce)
     total_loss = 0
     for num_batch, data_batch in enumerate(corpus.train):
         optimizer.zero_grad()

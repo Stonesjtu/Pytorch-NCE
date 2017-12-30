@@ -85,6 +85,12 @@ class NCELoss(nn.Module):
         self.nce = True
         self.index_module.nce = True
 
+    def nce_mode(self, status):
+        if status:
+            self.enable_nce()
+        else:
+            self.disable_nce()
+
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
         """
