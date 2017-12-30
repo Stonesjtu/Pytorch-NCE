@@ -1,6 +1,6 @@
+"""Main container for common language model"""
 import torch
 import torch.nn as nn
-from torch.nn.utils.rnn import PackedSequence, pack_padded_sequence, pad_packed_sequence
 
 from utils import get_mask
 

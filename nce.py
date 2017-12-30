@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 from alias_multinomial import AliasMethod
-from index_gru import IndexGRU
 
 
 class NCELoss(nn.Module):
@@ -16,7 +15,9 @@ class NCELoss(nn.Module):
     There are two modes in this NCELoss module:
         - nce: enable the NCE approximtion
         - ce: use the original cross entropy as default loss
-    They can be switched by calling function `nce()` or `ce()`
+    They can be switched by calling function `enable_nce()` or
+    `disable_nce()`, you can also switch on/off via `nce_mode(True/False)`
+
     Ref:
         X.Chen etal Recurrent neural network language
         model training with noise contrastive estimation
@@ -24,8 +25,6 @@ class NCELoss(nn.Module):
         https://core.ac.uk/download/pdf/42338485.pdf
 
     Attributes:
-        nhidden: hidden size of LSTM(a.k.a the output size)
-        ntokens: vocabulary size
         noise: the distribution of noise
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
         norm_term: the normalization term (lnZ in paper)
@@ -50,8 +49,7 @@ class NCELoss(nn.Module):
     Shape:
     """
     def __init__(self,
-                 ntokens,
-                 nhidden,
+                 index_module,
                  noise,
                  noise_ratio=10,
                  norm_term=9,
@@ -62,18 +60,16 @@ class NCELoss(nn.Module):
                  ):
         super(NCELoss, self).__init__()
 
+        self.index_module = index_module
         self.register_buffer('noise', noise)
         self.alias = AliasMethod(noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
-        self.ntokens = ntokens
         self.size_average = size_average
         self.reduce = reduce
         self.per_word = per_word
         self.nce = nce
         self.ce_loss = nn.CrossEntropyLoss(reduce=False)
-        self.index_module = IndexLinear(nhidden, ntokens)
-        #self.index_module = IndexGRU(ntokens, nhidden, nhidden, 0.5)
 
 
     # set the NCE mode for this module. Similar with module.train()/eval()
@@ -186,57 +182,3 @@ class NCELoss(nn.Module):
 
         return loss
 
-
-
-class IndexLinear(nn.Linear):
-    """A linear layer that only decodes the results of provided indices
-
-    Args:
-        target_idx: indices of target words
-        noise_idx: indices of noise words
-        input: input matrix
-
-    Shape:
-        - target_idx :math:`(B, N)` where `max(M) <= N` B is batch size
-        - noise_idx :math:`(B, N, N_r)` where `max(M) <= N`
-        - Input :math:`(B, N, in\_features)`
-
-    Return:
-        - target_score :math:`(N, 1)`
-        - noise_score :math:`(N, N_r)` the un-normalized score
-    """
-    nce = True
-
-    def __init__(self, input_size, output_size):
-        super(IndexLinear, self).__init__(input_size, output_size)
-        self.reset_parameters()
-
-    def forward(self, target_idx, noise_idx, input):
-        """
-        Shape:
-            - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
-        """
-
-        # flatten the following matrix
-        input = input.view(-1, input.size(-1))
-        if not self.nce:
-            score = super(IndexLinear, self).forward(input) # (N, V)
-            return score
-
-        original_size = target_idx.size() # the size will be used to pack the output of indexlinear
-        target_idx = target_idx.view(-1)
-        noise_idx = noise_idx.view(-1, noise_idx.size(-1))
-
-        indices = torch.cat([target_idx.unsqueeze(-1), noise_idx], dim=-1)
-
-        # the pytorch's [] operator BP can't correctly
-        input = input.unsqueeze(1)
-        target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
-        bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
-        out = torch.baddbmm(1, bias, 1, input, target_batch).squeeze()
-        return out.view(*original_size, -1)
-
-    def reset_parameters(self):
-        init_range = 0.1
-        self.bias.data.fill_(0)
-        self.weight.data.uniform_(-init_range, init_range)
