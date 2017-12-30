@@ -1,4 +1,4 @@
-# the NCE module written for pytorch
+"""A generic NCE wrapper which speedup the training and inferencing"""
 
 import torch
 import torch.nn as nn
@@ -36,6 +36,18 @@ class NCELoss(nn.Module):
 
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
+        - target: :math:`(B, N)`
+        - loss: :math:`(B, N)` if `reduce=True`
+
+    Input:
+        target: the supervised training label.
+        args&kwargs: extra arguments passed to underlying index module
+
+    Return:
+        loss: if `reduce=False` the scalar NCELoss Variable ready for backward,
+        else the loss matrix for every individual targets.
+
+    Shape:
     """
     def __init__(self,
                  ntokens,
@@ -75,50 +87,29 @@ class NCELoss(nn.Module):
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
-
-        Parameters:
-            target: the supervised training label.
-            args&kwargs: extra arguments passed to underlying index module
-
-        Shape:
-            - input: :math:`(B, N, E)` where `N = number of tokens, E = embedding size`
-            - target: :math:`(B, N)`
-
-        Return:
-            the scalar NCELoss Variable ready for backward
         """
 
         batch = target.size(0)
         max_len = target.size(1)
         if self.nce:
 
-            if self.per_word:
-                noise_samples = self.alias.draw(
-                batch,
-                max_len,
-                self.noise_ratio,
-                ).cuda()
-            else:
-                noise_samples = self.alias.draw(self.noise_ratio).cuda().unsqueeze(0).repeat(max_len, 1)
-            noise_samples = Variable(noise_samples)
+            noise_samples = self.get_noise(batch, max_len)
 
             # B,N,Nr
             prob_noise = Variable(
                 self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
             )
+            prob_target_in_noise = Variable(
+                self.noise[target.data.view(-1)].view_as(target)
+            )
 
-            # B,N    B,N,Nr
+            # (B,N), (B,N,Nr)
             prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
 
-            model_loss = torch.log(prob_model / (
-                prob_model + self.noise_ratio * Variable(self.noise[target.data.view(-1)]).view_as(target)
-            ))
-
-            noise_loss = torch.sum(
-                torch.log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
-            ).squeeze()
-
-            loss = - (model_loss + noise_loss)
+            loss = self.nce_loss(
+                prob_model, prob_noise_in_model,
+                prob_noise, prob_target_in_noise,
+            )
 
         else:
             # Fallback into conventional cross entropy
@@ -137,6 +128,21 @@ class NCELoss(nn.Module):
         else:
             return loss
 
+    def get_noise(self, batch_size, max_len):
+        """Generate noise samples from noise distribution"""
+
+        if self.per_word:
+            noise_samples = self.alias.draw(
+            batch_size,
+            max_len,
+            self.noise_ratio,
+            ).cuda()
+        else:
+            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).cuda().expand(batch_size, max_len, self.noise_ratio)
+
+        noise_samples = Variable(noise_samples)
+        return noise_samples
+
     def _get_prob(self, target_idx, noise_idx, *args, **kwargs):
         """Get the NCE estimated probability for target and noise
 
@@ -149,6 +155,31 @@ class NCELoss(nn.Module):
 
         probs = probs.sub(self.norm_term).exp()
         return probs[:, :, 0], probs[:, :, 1:]
+
+    def nce_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
+        """Compute the classification loss given all four probabilities
+
+        Args:
+            - prob_model: probability of target words given by the model (RNN)
+            - prob_noise_in_model: probability of noise words given by the model
+            - prob_noise: probability of noise words given by the noise distribution
+            - prob_target_in_noise: probability of target words given by the noise distribution
+
+        Returns:
+            - loss: a mis-classification loss for every single case
+        """
+        model_loss = torch.log(prob_model / (
+            prob_model + self.noise_ratio * prob_target_in_noise
+        ))
+
+        noise_loss = torch.sum(
+            torch.log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
+        ).squeeze()
+
+        loss = - (model_loss + noise_loss)
+
+        return loss
+
 
 
 class IndexLinear(nn.Linear):
