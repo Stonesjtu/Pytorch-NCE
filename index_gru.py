@@ -25,6 +25,7 @@ class IndexGRU(nn.Module):
     def __init__(self, ntoken, ninp, nhid, dropout=0.2):
         super(IndexGRU, self).__init__()
 
+        self.ntoken = ntoken
         self.nhid = nhid
         self.ninp = ninp
 
@@ -44,22 +45,43 @@ class IndexGRU(nn.Module):
     def forward(self, target_idx, noise_idx, input):
         input_emb = self.encoder(input) # (B, N, E)
         # The noise for <s> (sentence start) is non-sense
-        noise_emb = self.encoder(noise_idx.view(-1))
-
         rnn_output, _last_hidden = self.rnn(input_emb) # (B, N, H)
         # there's a time-step shift in the following code.
-        # because neg_output goes through one more RNN cell
+        # because noise_output goes through one more RNN cell
         effective_rnn_output = rnn_output[:, 1:]
-        batched_rnn_output = effective_rnn_output.unsqueeze(2).expand(
-            -1, -1, noise_idx.size(2), -1
+        target_score = self.scorer(effective_rnn_output).squeeze()
+
+        if not self.nce:
+            #TODO: evaluate Perplexity
+            raise(NotImplementedError('CE evaluation mode for GRU is not implemented yet'))
+            fake_score = torch.Tensor(*target_idx.size(), self.ntoken)
+
+        noise_score = self.get_noise_score(noise_idx, rnn_output)
+
+        return target_score, noise_score
+
+    def get_noise_score(self, noise_idx, rnn_output):
+        """Get the score of noise given supervised context
+
+        Args:
+            - noise_idx: (B, N, N_r) the noise word index
+            - rnn_output: output of rnn model
+
+        Return:
+            - noise_score: (B, N, 1) score for noise word index
+        """
+
+        noise_emb = self.encoder(noise_idx.view(-1))
+        noise_ratio = noise_idx.size(2)
+
+        batched_rnn_output = rnn_output[:,:-1].unsqueeze(2).expand(
+            -1, -1, noise_ratio, -1
         ).contiguous().view(1, -1, self.nhid)
 
-        neg_output, _last_hidden = self.rnn(
+        noise_output, _last_hidden = self.rnn(
             noise_emb.view(-1, 1, self.nhid),
             batched_rnn_output,
         )
 
-        target_score = self.scorer(effective_rnn_output).squeeze()
-        noise_score = self.scorer(neg_output).view_as(noise_idx)
-
-        return target_score, noise_score
+        noise_score = self.scorer(noise_output).view_as(noise_idx)
+        return noise_score
