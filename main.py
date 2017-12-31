@@ -50,7 +50,7 @@ corpus = data.Corpus(
     pin_memory=args.cuda,
 )
 
-eval_batch_size = args.batch_size
+eval_batch_size = 1
 ################################################################## Build the criterion and model, setup the NCE and index_module
 #################################################################
 
@@ -136,7 +136,10 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    model.criterion.disable_nce()
+
+    # GRU does not support ce mode right now
+    if sep_target:
+        model.criterion.disable_nce()
     eval_loss = 0
     total_length = 0
 
