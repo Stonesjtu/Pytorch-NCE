@@ -5,7 +5,7 @@ new arguments:
   - `--noise-ratio <10>`: numbers of noise samples per data sample
   - `--norm-term <9>`: the constant normalization term `Ln(z)`
   - `--train`: train or just evaluation existing model
-  - `--dict <None>`: use vocabulary file if specified, otherwise use the words in train.txt
+  - `--vocab <None>`: use vocabulary file if specified, otherwise use the words in train.txt
 
 ### Examples
 

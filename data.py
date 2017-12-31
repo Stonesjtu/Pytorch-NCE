@@ -51,16 +51,16 @@ class Dictionary(object):
 class PaddedDataset(Dataset):
     """dataset that zero-pads all sentence into same length
     Attributes:
-        dict_path: dictionary file, one word each line
+        vocab_path: dictionary file, one word each line
         file_path: the directory of all train, test and valid corpus
 
     Parameters:
         dictionary: a word-to-index mapping, will build a new one if not provided
     """
-    def __init__(self, file_path, dictionary=None, dict_path=None):
+    def __init__(self, file_path, dictionary=None, vocab_path=None):
         super(PaddedDataset, self).__init__()
         self.file_path = file_path
-        self.dict_path = dict_path
+        self.vocab_path = vocab_path
 
         self.dictionary = Dictionary()
         if not dictionary:
@@ -78,10 +78,10 @@ class PaddedDataset(Dataset):
         """
 
         # Use existing vocabulary file to construct dict
-        if self.dict_path:
-            assert os.path.exists(self.dict_path)
+        if self.vocab_path:
+            assert os.path.exists(self.vocab_path)
             # Add words to the dictionary
-            with open(self.dict_path, 'r') as f:
+            with open(self.vocab_path, 'r') as f:
                 for line in f:
                     self.dictionary.add_word(line.split()[0])
 
@@ -135,9 +135,8 @@ class PaddedDataset(Dataset):
 
     def __getitem__(self, index):
         return (
-            self.data[index][:-1],
-            self.data[index][1:],
-            self.lengths[index] - 1,
+            self.data[index],
+            self.lengths[index],
         )
 
     def __len__(self):
@@ -145,12 +144,12 @@ class PaddedDataset(Dataset):
 
 
 class Corpus(object):
-    def __init__(self, path, dict_path=None, batch_size=1, shuffle=False, pin_memory=False):
+    def __init__(self, path, vocab_path=None, batch_size=1, shuffle=False, pin_memory=False):
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.pin_memory = pin_memory
         self.train = self.get_dataloader(
-            PaddedDataset(os.path.join(path, 'train.txt'), dict_path=dict_path)
+            PaddedDataset(os.path.join(path, 'train.txt'), vocab_path=vocab_path)
         )
         self.dict = self.train.dataset.dictionary
         self.valid = self.get_dataloader(
