@@ -153,10 +153,11 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        probs = self.index_module(target_idx, noise_idx, *args, **kwargs)
+        target_prob, noise_prob = self.index_module(target_idx, noise_idx, *args, **kwargs)
 
-        probs = probs.sub(self.norm_term).exp()
-        return probs[:, :, 0], probs[:, :, 1:]
+        target_prob = target_prob.sub(self.norm_term).exp()
+        noise_prob = noise_prob.sub(self.norm_term).exp()
+        return target_prob, noise_prob
 
     def nce_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
         """Compute the classification loss given all four probabilities

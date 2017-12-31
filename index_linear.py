@@ -44,12 +44,14 @@ class IndexLinear(nn.Linear):
 
         indices = torch.cat([target_idx.unsqueeze(-1), noise_idx], dim=-1)
 
-        # the pytorch's [] operator BP can't correctly
+        # the pytorch's [] operator can't BP correctly with redundant indices
+        # before version 0.2.0
         input = input.unsqueeze(1)
-        target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
-        bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
-        out = torch.baddbmm(1, bias, 1, input, target_batch).squeeze()
-        return out.view(*original_size, -1)
+        target_batch = self.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
+        bias = self.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
+        out = torch.baddbmm(1, bias, 1, input, target_batch).view(*original_size, -1)
+        target_score, noise_score = out[:, :, 0], out[:, :, 1:]
+        return target_score, noise_score
 
     def reset_parameters(self):
         init_range = 0.1

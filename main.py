@@ -12,6 +12,7 @@ import data
 from model import RNNModel
 from nce import NCELoss
 from utils import process_data, build_unigram_noise, setup_parser
+from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
 
@@ -43,14 +44,14 @@ if torch.cuda.is_available():
 #################################################################
 corpus = data.Corpus(
     path=args.data,
-    dict_path=args.dict,
+    vocab_path=args.vocab,
     batch_size=args.batch_size,
     shuffle=True,
     pin_memory=args.cuda,
 )
 
 eval_batch_size = args.batch_size
-################################################################## Build the criterion and model
+################################################################## Build the criterion and model, setup the NCE and index_module
 #################################################################
 
 ntoken = len(corpus.train.dataset.dictionary)
@@ -60,21 +61,35 @@ print('Vocabulary size is {}'.format(ntoken))
 noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
+if args.index_module == 'linear':
+    index_module = IndexLinear(args.nhid, ntoken)
+    criterion = NCELoss(
+        index_module=index_module,
+        noise=noise,
+        noise_ratio=args.noise_ratio,
+        norm_term=args.norm_term,
+    )
+    criterion.nce_mode(args.nce)
+    model = RNNModel(
+        ntoken, args.emsize, args.nhid, args.nlayers,
+        criterion=criterion, dropout=args.dropout,
+    )
+    sep_target=True
 
-index_module = IndexLinear(args.nhid, ntoken)
-#index_module = IndexGRU(ntoken, nhidden, nhidden, 0.5)
-criterion = NCELoss(
-    index_module=index_module,
-    noise=noise,
-    noise_ratio=args.noise_ratio,
-    norm_term=args.norm_term,
-)
-criterion.nce_mode(args.nce)
+elif args.index_module == 'gru':
+    print('Falling into one layer GRU due to indx_GRU supporting')
+    index_gru = IndexGRU(ntoken, args.nhid, args.nhid, args.dropout)
+    nce_criterion = NCELoss(
+        index_module=index_gru,
+        noise=noise,
+        noise_ratio=args.noise_ratio,
+        norm_term=args.norm_term,
+    )
+    model = GenModel(
+        criterion=nce_criterion,
+    )
+    sep_target=False
 
-model = RNNModel(
-    ntoken, args.emsize, args.nhid, args.nlayers,
-    criterion=criterion, dropout=args.dropout,
-)
 if args.cuda:
     model.cuda()
 print(model)
@@ -96,7 +111,7 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
     total_loss = 0
     for num_batch, data_batch in enumerate(corpus.train):
         optimizer.zero_grad()
-        data, target, length = process_data(data_batch, cuda=args.cuda)
+        data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
         loss = model(data, target, length)
         loss.backward()
 
@@ -127,7 +142,7 @@ def evaluate(model, data_source, cuda=args.cuda):
 
     data_source.batch_size = eval_batch_size
     for data_batch in data_source:
-        data, target, length = process_data(data_batch, cuda=cuda, eval=True)
+        data, target, length = process_data(data_batch, cuda=cuda, eval=True, sep_target=sep_target)
 
         loss = model(data, target, length)
         cur_length = length.sum()

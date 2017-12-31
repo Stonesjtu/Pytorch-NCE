@@ -6,10 +6,10 @@ import argparse
 
 def setup_parser():
     parser = argparse.ArgumentParser(
-        description='PyTorch PennTreeBank RNN/LSTM Language Model')
+        description='PyTorch PennTreeBank NCE Language Model')
     parser.add_argument('--data', type=str, default='./data/penn',
                         help='location of the data corpus')
-    parser.add_argument('--dict', type=str, default=None,
+    parser.add_argument('--vocab', type=str, default=None,
                         help='location of the vocabulary file, without which will use vocab of training corpus')
     parser.add_argument('--emsize', type=int, default=200,
                         help='size of word embeddings')
@@ -41,6 +41,8 @@ def setup_parser():
                         help='path to save the final model')
     parser.add_argument('--nce', action='store_true',
                         help='use NCE as loss function')
+    parser.add_argument('--index-module', type=str, default='linear',
+                        help='index module to use in NCELoss wrapper')
     parser.add_argument('--noise-ratio', type=int, default=10,
                         help='set the noise ratio of NCE sampling')
     parser.add_argument('--norm-term', type=int, default=9,
@@ -56,32 +58,54 @@ def setup_parser():
 
 
 # Get the mask matrix of a batched input
-def get_mask(lengths):
-    max_len = lengths[0]
+def get_mask(lengths, cut_tail=0):
+    assert lengths.min() >= cut_tail
+    max_len = lengths.max()
     size = len(lengths)
     mask = lengths.new().byte().resize_(size, max_len).zero_()
     for i in range(size):
-        mask[i][:lengths[i]].fill_(1)
+        mask[i][:lengths[i]-cut_tail].fill_(1)
     return Variable(mask)
 
 
-def process_data(data_batch, cuda=False, eval=False):
-    data, target, length = data_batch
+def process_data(data_batch, cuda=False, eval=False, sep_target=True):
+    """A data pre-processing util which construct the input `Variable` for model
 
+    Args:
+        - data_batch: a batched data from `PaddedDataset`
+        - cuda: indicates whether to put data into GPU
+        - eval: turn eval on will increase inference speed
+        - sep_target: return separated input and target if turned on
+
+    Returns:
+        - input: the input data batch
+        - target: target data if `sep_target` is True, else a duplicated input
+        - effective_length: the useful sentence length for loss computation <s> is ignored
+        """
+
+    batch_sentence, length = data_batch
     if cuda:
-        data = data.cuda()
-        target = target.cuda()
+        batch_sentence = batch_sentence.cuda()
         length = length.cuda()
 
-    length, idx = torch.sort(length, dim=0, descending=True)
-    max_len = length[0]
-    data = data.index_select(0, idx)
-    data = data[:, :max_len]
-    target = target.index_select(0, idx)
-    target = target[:, :max_len]
+    # cut the padded sentence to max sentence length in this batch
+    max_len = length.max()
+    batch_sentence = batch_sentence[:, :max_len]
+
+    # the useful sentence length for loss computation <s> is ignored
+    effective_length = length - 1
+
+    if sep_target:
+        data = batch_sentence[:, :-1]
+        target = batch_sentence[:, 1:]
+    else:
+        data = batch_sentence
+        target = batch_sentence
+
     data = Variable(data.contiguous(), volatile=eval)
     target = Variable(target.contiguous(), requires_grad=False)
-    return data, target, length
+
+    return data, target, effective_length
 
 
 def build_unigram_noise(freq):
