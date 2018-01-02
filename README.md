@@ -1,4 +1,4 @@
-This NCE module if forked from an old pytorch/examples repo.
+This NCE module is forked from the pytorch/examples repo.
 
 new arguments:
   - `--nce`: whether to use NCE as approximation
