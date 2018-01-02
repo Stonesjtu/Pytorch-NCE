@@ -4,14 +4,21 @@ new arguments:
   - `--nce`: whether to use NCE as approximation
   - `--noise-ratio <10>`: numbers of noise samples per data sample
   - `--norm-term <9>`: the constant normalization term `Ln(z)`
+  - `--index-module <linear>`: index module to use for NCE module (currently
+  <linear> and <gru> available, <gru> does not support PPL calculating )
   - `--train`: train or just evaluation existing model
   - `--vocab <None>`: use vocabulary file if specified, otherwise use the words in train.txt
 
 ### Examples
 
-Run NCE criterion:
+Run NCE criterion with linear module:
 ```bash
 python main.py --cuda --noise-ratio 10 --norm-term 9 --nce --train
+```
+
+Run NCE criterion with gru module:
+```bash
+python main.py --cuda --noise-ratio 10 --norm-term 9 --nce --train --index-module gru
 ```
 
 Run conventional CE criterion:
@@ -24,6 +31,7 @@ python main.py --cuda --train
 - `log/`: some log files of this scripts
 - `nce.py`: the NCE module wrapper
 - `index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
+- `index_gru.py`: an index module used by NCE, as a replacement for the whole language model module
 - `model.py`: the wrapper of all `nn.Module`s.
 - `main.py`: entry point
 - `utils.py`: some util functions for better abstraction

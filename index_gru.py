@@ -68,12 +68,13 @@ class IndexGRU(nn.Module):
             - rnn_output: output of rnn model
 
         Return:
-            - noise_score: (B, N, 1) score for noise word index
+            - noise_score: (B, N, N_r) score for noise word index
         """
 
         noise_emb = self.encoder(noise_idx.view(-1))
         noise_ratio = noise_idx.size(2)
 
+        # rnn_output of </s> is useless for sentence scoring
         batched_rnn_output = rnn_output[:,:-1].unsqueeze(2).expand(
             -1, -1, noise_ratio, -1
         ).contiguous().view(1, -1, self.nhid)
