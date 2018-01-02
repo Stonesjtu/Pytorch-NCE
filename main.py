@@ -20,17 +20,6 @@ parser = setup_parser()
 args = parser.parse_args()
 print(args)
 
-# Initialize tensor-board summary writer
-if args.tb_name:
-    from tensorboard import SummaryWriter
-    exp_name = '{} {}'.format(
-        datetime.now().strftime('%B%d %H:%M:%S'),
-        args.tb_name,
-    )
-    writer = SummaryWriter('runs/{}'.format(
-        exp_name,
-    ))
-
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
@@ -89,6 +78,9 @@ elif args.index_module == 'gru':
         criterion=nce_criterion,
     )
     sep_target=False
+
+else:
+    raise(NotImplementedError('The index module is not supported yet'))
 
 if args.cuda:
     model.cuda()
@@ -170,8 +162,6 @@ if __name__ == '__main__':
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
-                if args.tb_name:
-                    writer.add_scalar('valid_PPL', val_ppl, epoch)
                 print('-' * 89)
                 print('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
@@ -204,6 +194,3 @@ if __name__ == '__main__':
     print('| End of training | test ppl {:8.2f}'.format(test_ppl))
     print('=' * 89)
     sys.stdout.flush()
-
-    if args.tb_name:
-        writer.close()
