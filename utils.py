@@ -1,4 +1,6 @@
 # Collections of some helper functions
+import logging
+
 import torch
 from torch.autograd import Variable
 
@@ -55,6 +57,17 @@ def setup_parser():
                         help='Enable profiling mode, will execute only one batch data')
     return parser
 
+
+def setup_logger(logger_name):
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.DEBUG)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+
+    logger.addHandler(ch)
+
+    return logger
 
 
 # Get the mask matrix of a batched input
