@@ -2,29 +2,31 @@
 
 import sys
 import time
-from datetime import datetime
 import math
 
 import torch
 import torch.optim as optim
+import torch.autograd as autograd
 
 import data
 from model import RNNModel
 from nce import NCELoss
-from utils import process_data, build_unigram_noise, setup_parser
+from utils import process_data, build_unigram_noise, setup_parser, setup_logger
 from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
 
+
+logger = setup_logger('pytorch-nce')
 parser = setup_parser()
 args = parser.parse_args()
-print(args)
+logger.info(args)
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
     if not args.cuda:
-        print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+        logger.warning('You have a CUDA device, so you should probably run with --cuda')
     else:
         torch.cuda.manual_seed(args.seed)
 
@@ -44,7 +46,7 @@ eval_batch_size = 1
 #################################################################
 
 ntoken = len(corpus.train.dataset.dictionary)
-print('Vocabulary size is {}'.format(ntoken))
+logger.info('Vocabulary size is {}'.format(ntoken))
 
 # noise for soise sampling in NCE
 noise = build_unigram_noise(
@@ -66,7 +68,7 @@ if args.index_module == 'linear':
     sep_target=True
 
 elif args.index_module == 'gru':
-    print('Falling into one layer GRU due to indx_GRU supporting')
+    logger.warning('Falling into one layer GRU due to indx_GRU supporting')
     index_gru = IndexGRU(ntoken, args.nhid, args.nhid, args.dropout)
     nce_criterion = NCELoss(
         index_module=index_gru,
@@ -80,11 +82,11 @@ elif args.index_module == 'gru':
     sep_target=False
 
 else:
-    raise(NotImplementedError('The index module is not supported yet'))
+    logger.error('The index module is not supported yet')
 
 if args.cuda:
     model.cuda()
-print(model)
+logger.info('model definition:\n %s', model)
 #################################################################
 # Training code
 #################################################################
@@ -117,13 +119,13 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
             if args.prof:
                 break
             cur_loss = total_loss / args.log_interval
-            print('| epoch {:3d} | {:5d}/{:5d} batches'
+            logger.debug('| epoch {:3d} | {:5d}/{:5d} batches'
                   ' | lr {:02.2f} | '
                   'loss {:5.2f} | ppl {:8.2f}'.format(
                       epoch, num_batch, len(corpus.train), lr,
                       cur_loss, math.exp(cur_loss)))
             total_loss = 0
-            print('-' * 87)
+            logger.debug('-' * 87)
 
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
@@ -162,12 +164,12 @@ if __name__ == '__main__':
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
-                print('-' * 89)
-                print('| end of epoch {:3d} | time: {:5.2f}s |'
+                logger.info('-' * 89)
+                logger.info('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
                                                 (time.time() - epoch_start_time),
                                                 val_ppl))
-                print('-' * 89)
+                logger.info('-' * 89)
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
                 # Save the model if the validation loss is the best we've seen so far.
@@ -180,8 +182,8 @@ if __name__ == '__main__':
                     # validation dataset.
                     lr /= args.lr_decay
         except KeyboardInterrupt:
-            print('-' * 89)
-            print('Exiting from training early')
+            logger.info('-' * 89)
+            logger.warning('Exiting from training early')
 
     else:
         # Load the best saved model.
@@ -190,7 +192,7 @@ if __name__ == '__main__':
 
     # Run on test data.
     test_ppl = evaluate(model, corpus.test)
-    print('=' * 89)
-    print('| End of training | test ppl {:8.2f}'.format(test_ppl))
-    print('=' * 89)
+    logger.info('=' * 89)
+    logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
+    logger.info('=' * 89)
     sys.stdout.flush()
