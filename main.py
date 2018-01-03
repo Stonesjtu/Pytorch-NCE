@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 
 import sys
-import argparse
 import time
 from datetime import datetime
 import math
@@ -12,73 +11,14 @@ import torch.optim as optim
 import data
 from model import RNNModel
 from nce import NCELoss
-from cross_entropy import CELoss
-from utils import process_data, build_unigram_noise
-
-def setup_parser():
-    parser = argparse.ArgumentParser(
-        description='PyTorch PennTreeBank RNN/LSTM Language Model')
-    parser.add_argument('--data', type=str, default='./data/penn',
-                        help='location of the data corpus')
-    parser.add_argument('--dict', type=str, default=None,
-                        help='location of the vocabulary file, without which will use vocab of training corpus')
-    parser.add_argument('--emsize', type=int, default=200,
-                        help='size of word embeddings')
-    parser.add_argument('--nhid', type=int, default=200,
-                        help='number of hidden units per layer')
-    parser.add_argument('--nlayers', type=int, default=2,
-                        help='number of layers')
-    parser.add_argument('--lr', type=float, default=1.0,
-                        help='initial learning rate')
-    parser.add_argument('--weight-decay', type=float, default=1e-5,
-                        help='initial weight decay')
-    parser.add_argument('--lr-decay', type=float, default=2,
-                        help='learning rate decay when no progress is observed on validation set')
-    parser.add_argument('--clip', type=float, default=0.25,
-                        help='gradient clipping')
-    parser.add_argument('--epochs', type=int, default=40,
-                        help='upper epoch limit')
-    parser.add_argument('--batch-size', type=int, default=20, metavar='N',
-                        help='batch size')
-    parser.add_argument('--dropout', type=float, default=0.2,
-                        help='dropout applied to layers (0 = no dropout)')
-    parser.add_argument('--seed', type=int, default=1111,
-                        help='random seed')
-    parser.add_argument('--cuda', action='store_true',
-                        help='use CUDA')
-    parser.add_argument('--log-interval', type=int, default=200, metavar='N',
-                        help='report interval')
-    parser.add_argument('--save', type=str, default='model.pt',
-                        help='path to save the final model')
-    parser.add_argument('--nce', action='store_true',
-                        help='use NCE as loss function')
-    parser.add_argument('--noise-ratio', type=int, default=10,
-                        help='set the noise ratio of NCE sampling')
-    parser.add_argument('--norm-term', type=int, default=9,
-                        help='set the log normalization term of NCE sampling')
-    parser.add_argument('--train', action='store_true',
-                        help='set train mode, otherwise only evaluation is performed')
-    parser.add_argument('--tb-name', type=str, default=None,
-                        help='the name which would be used in tensorboard record')
-    parser.add_argument('--prof', action='store_true',
-                        help='Enable profiling mode, will execute only one batch data')
-    return parser
-
+from utils import process_data, build_unigram_noise, setup_parser
+from generic_model import GenModel
+from index_gru import IndexGRU
+from index_linear import IndexLinear
 
 parser = setup_parser()
 args = parser.parse_args()
 print(args)
-
-# Initialize tensor-board summary writer
-if args.tb_name:
-    from tensorboard import SummaryWriter
-    exp_name = '{} {}'.format(
-        datetime.now().strftime('%B%d %H:%M:%S'),
-        args.tb_name,
-    )
-    writer = SummaryWriter('runs/{}'.format(
-        exp_name,
-    ))
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -93,43 +33,55 @@ if torch.cuda.is_available():
 #################################################################
 corpus = data.Corpus(
     path=args.data,
-    dict_path=args.dict,
+    vocab_path=args.vocab,
     batch_size=args.batch_size,
     shuffle=True,
     pin_memory=args.cuda,
 )
 
-eval_batch_size = args.batch_size
-################################################################## Build the criterion and model
+eval_batch_size = 1
+################################################################## Build the criterion and model, setup the NCE and index_module
 #################################################################
 
-ntokens = len(corpus.train.dataset.dictionary)
-print('Vocabulary size is {}'.format(ntokens))
+ntoken = len(corpus.train.dataset.dictionary)
+print('Vocabulary size is {}'.format(ntoken))
 
 # noise for soise sampling in NCE
 noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
 )
-
-if args.nce:
+if args.index_module == 'linear':
+    index_module = IndexLinear(args.nhid, ntoken)
     criterion = NCELoss(
-        ntokens=ntokens,
-        nhidden=args.nhid,
+        index_module=index_module,
         noise=noise,
         noise_ratio=args.noise_ratio,
         norm_term=args.norm_term,
-        normed_eval=True, # evaluate PPL using normalized prob
     )
-else:
-    criterion = CELoss(
-        ntokens=ntokens,
-        nhidden=args.nhid,
+    criterion.nce_mode(args.nce)
+    model = RNNModel(
+        ntoken, args.emsize, args.nhid, args.nlayers,
+        criterion=criterion, dropout=args.dropout,
     )
+    sep_target=True
 
-model = RNNModel(
-    ntokens, args.emsize, args.nhid, args.nlayers,
-    criterion=criterion, dropout=args.dropout,
-)
+elif args.index_module == 'gru':
+    print('Falling into one layer GRU due to indx_GRU supporting')
+    index_gru = IndexGRU(ntoken, args.nhid, args.nhid, args.dropout)
+    nce_criterion = NCELoss(
+        index_module=index_gru,
+        noise=noise,
+        noise_ratio=args.noise_ratio,
+        norm_term=args.norm_term,
+    )
+    model = GenModel(
+        criterion=nce_criterion,
+    )
+    sep_target=False
+
+else:
+    raise(NotImplementedError('The index module is not supported yet'))
+
 if args.cuda:
     model.cuda()
 print(model)
@@ -139,24 +91,24 @@ print(model)
 
 
 def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    params = model.parameters()
     optimizer = optim.SGD(
-        params=params,
+        params=model.parameters(),
         lr=lr,
         momentum=momentum,
         weight_decay=weight_decay
     )
     # Turn on training mode which enables dropout.
     model.train()
+    model.criterion.nce_mode(args.nce)
     total_loss = 0
     for num_batch, data_batch in enumerate(corpus.train):
         optimizer.zero_grad()
-        data, target, length = process_data(data_batch, cuda=args.cuda)
+        data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
         loss = model(data, target, length)
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(params, args.clip)
+        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.data[0]
@@ -176,12 +128,16 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
+
+    # GRU does not support ce mode right now
+    if sep_target:
+        model.criterion.disable_nce()
     eval_loss = 0
     total_length = 0
 
     data_source.batch_size = eval_batch_size
     for data_batch in data_source:
-        data, target, length = process_data(data_batch, cuda=cuda, eval=True)
+        data, target, length = process_data(data_batch, cuda=cuda, eval=True, sep_target=sep_target)
 
         loss = model(data, target, length)
         cur_length = length.sum()
@@ -206,8 +162,6 @@ if __name__ == '__main__':
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
-                if args.tb_name:
-                    writer.add_scalar('valid_PPL', val_ppl, epoch)
                 print('-' * 89)
                 print('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
@@ -240,6 +194,3 @@ if __name__ == '__main__':
     print('| End of training | test ppl {:8.2f}'.format(test_ppl))
     print('=' * 89)
     sys.stdout.flush()
-
-    if args.tb_name:
-        writer.close()

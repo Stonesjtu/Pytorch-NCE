@@ -1,4 +1,4 @@
-# the NCE module written for pytorch
+"""A generic NCE wrapper which speedup the training and inferencing"""
 
 import torch
 import torch.nn as nn
@@ -8,8 +8,16 @@ from alias_multinomial import AliasMethod
 
 class NCELoss(nn.Module):
     """Noise Contrastive Estimation
+
     NCE is to eliminate the computational cost of softmax
     normalization.
+
+    There are two modes in this NCELoss module:
+        - nce: enable the NCE approximtion
+        - ce: use the original cross entropy as default loss
+    They can be switched by calling function `enable_nce()` or
+    `disable_nce()`, you can also switch on/off via `nce_mode(True/False)`
+
     Ref:
         X.Chen etal Recurrent neural network language
         model training with noise contrastive estimation
@@ -17,145 +25,161 @@ class NCELoss(nn.Module):
         https://core.ac.uk/download/pdf/42338485.pdf
 
     Attributes:
-        nhidden: hidden size of LSTM(a.k.a the output size)
-        ntokens: vocabulary size
         noise: the distribution of noise
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
         norm_term: the normalization term (lnZ in paper)
         size_average: average the loss by batch size
-        decoder: the decoder matrix
         normed_eval: using normalized probability during evaluation
+        index_module: a nn module which takes target and noise idx (maybe
+        extra parameters) and outputs the corresponding likelihoods.
 
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
-        - decoder: :math:`(E, V)` where `E = embedding size`
-    """
+        - target: :math:`(B, N)`
+        - loss: :math:`(B, N)` if `reduce=True`
 
+    Input:
+        target: the supervised training label.
+        args&kwargs: extra arguments passed to underlying index module
+
+    Return:
+        loss: if `reduce=False` the scalar NCELoss Variable ready for backward,
+        else the loss matrix for every individual targets.
+
+    Shape:
+    """
     def __init__(self,
-                 ntokens,
-                 nhidden,
+                 index_module,
                  noise,
                  noise_ratio=10,
                  norm_term=9,
                  size_average=True,
+                 reduce=False,
                  per_word=True,
-                 normed_eval=True,
+                 nce=True,
                  ):
         super(NCELoss, self).__init__()
 
+        self.index_module = index_module
         self.register_buffer('noise', noise)
         self.alias = AliasMethod(noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
-        self.ntokens = ntokens
         self.size_average = size_average
+        self.reduce = reduce
         self.per_word = per_word
-        if normed_eval:
-            self.normed_eval = normed_eval
-            self.ce = nn.CrossEntropyLoss(size_average=False)
-        self.decoder = IndexLinear(nhidden, ntokens)
+        self.nce = nce
+        self.ce_loss = nn.CrossEntropyLoss(reduce=False)
 
-    def forward(self, input, target=None):
+
+    # set the NCE mode for this module. Similar with module.train()/eval()
+    def disable_nce(self):
+        self.nce = False
+        self.index_module.nce = False
+
+    def enable_nce(self):
+        self.nce = True
+        self.index_module.nce = True
+
+    def nce_mode(self, status):
+        if status:
+            self.enable_nce()
+        else:
+            self.disable_nce()
+
+    def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
-
-        Parameters:
-            input: the output of the RNN model, being an predicted embedding
-            target: the supervised training label.
-
-        Shape:
-            - input: :math:`(N, E)` where `N = number of tokens, E = embedding size`
-            - target: :math:`(N)`
-
-        Return:
-            the scalar NCELoss Variable ready for backward
         """
 
-        length = target.size(0)
-        if self.training:
-            assert input.size(0) == target.size(0)
+        batch = target.size(0)
+        max_len = target.size(1)
+        if self.nce:
 
-            if self.per_word:
-                noise_samples = self.alias.draw(self.noise_ratio * length).cuda().view(length, -1)
-            else:
-                noise_samples = self.alias.draw(self.noise_ratio).cuda().unsqueeze(0).repeat(length, 1)
-            data_prob, noise_in_data_probs = self._get_prob(input, target.data, noise_samples)
-            noise_probs = Variable(
-                self.noise[noise_samples.view(-1)].view_as(noise_in_data_probs)
+            noise_samples = self.get_noise(batch, max_len)
+
+            # B,N,Nr
+            prob_noise = Variable(
+                self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
+            )
+            prob_target_in_noise = Variable(
+                self.noise[target.data.view(-1)].view_as(target)
             )
 
-            rnn_loss = torch.log(data_prob / (
-                data_prob + self.noise_ratio * Variable(self.noise[target.data])
-            ))
+            # (B,N), (B,N,Nr)
+            prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
 
-            noise_loss = torch.sum(
-                torch.log((self.noise_ratio * noise_probs) / (noise_in_data_probs + self.noise_ratio * noise_probs)), 1
+            loss = self.nce_loss(
+                prob_model, prob_noise_in_model,
+                prob_noise, prob_target_in_noise,
             )
 
-            loss = -1 * torch.sum(rnn_loss + noise_loss)
-
-        elif self.normed_eval:
-            # Fallback into conventional cross entropy
-            out = self.decoder(input)
-            loss = self.ce(out, target)
         else:
-            out = self.decoder(input, indices=target.unsqueeze(1))
-            nll = out.sub(self.norm_term)
-            loss = -1 * nll.sum()
+            # Fallback into conventional cross entropy
+            out = self.index_module(target, None, *args, **kwargs)
+            loss = self.ce_loss(out, target.view(-1)).view(batch, max_len)
+        # else:
+        #     out = self.index_module(target, None, *args, **kwargs)
+        #     nll = out.sub(self.norm_term)
+        #     loss = -1 * nll.sum()
 
-        if self.size_average:
-            loss = loss / length
-        return loss
+        if self.reduce:
+            if self.size_average:
+                return loss.mean()
+            else:
+                return loss.sum()
+        else:
+            return loss
 
-    def _get_prob(self, embedding, target_idx, noise_idx):
+    def get_noise(self, batch_size, max_len):
+        """Generate noise samples from noise distribution"""
+
+        if self.per_word:
+            noise_samples = self.alias.draw(
+            batch_size,
+            max_len,
+            self.noise_ratio,
+            ).cuda()
+        else:
+            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).cuda().expand(batch_size, max_len, self.noise_ratio)
+
+        noise_samples = Variable(noise_samples)
+        return noise_samples
+
+    def _get_prob(self, target_idx, noise_idx, *args, **kwargs):
         """Get the NCE estimated probability for target and noise
 
         Shape:
-            - Embedding: :math:`(N, E)`
             - Target_idx: :math:`(N)`
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        embedding = embedding
-        indices = Variable(
-            torch.cat([target_idx.unsqueeze(1), noise_idx], dim=1)
-        )
-        probs = self.decoder(embedding, indices)
+        target_prob, noise_prob = self.index_module(target_idx, noise_idx, *args, **kwargs)
 
-        probs = probs.sub(self.norm_term).exp()
-        return probs[:,0], probs[:,1:]
+        target_prob = target_prob.sub(self.norm_term).exp()
+        noise_prob = noise_prob.sub(self.norm_term).exp()
+        return target_prob, noise_prob
 
+    def nce_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
+        """Compute the classification loss given all four probabilities
 
-class IndexLinear(nn.Linear):
-    """A linear layer that only decodes the results of provided indices
+        Args:
+            - prob_model: probability of target words given by the model (RNN)
+            - prob_noise_in_model: probability of noise words given by the model
+            - prob_noise: probability of noise words given by the noise distribution
+            - prob_target_in_noise: probability of target words given by the noise distribution
 
-    Args:
-        input: the list of embedding
-        indices: the indices of interests.
-
-    Shape:
-        - Input :math:`(N, in\_features)`
-        - Indices :math:`(N, 1+N_r)` where `max(M) <= N`
-
-    Return:
-        - out :math:`(N, 1+N_r)`
-    """
-
-    def forward(self, input, indices=None):
+        Returns:
+            - loss: a mis-classification loss for every single case
         """
-        Shape:
-            - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
-        """
+        model_loss = torch.log(prob_model / (
+            prob_model + self.noise_ratio * prob_target_in_noise
+        ))
 
-        if indices is None:
-            return super(IndexLinear, self).forward(input)
-        # the pytorch's [] operator BP can't correctly
-        input = input.unsqueeze(1)
-        target_batch = self.weight.index_select(0, indices.view(-1)).view(indices.size(0), indices.size(1), -1).transpose(1,2)
-        bias = self.bias.index_select(0, indices.view(-1)).view(indices.size(0), 1, indices.size(1))
-        out = torch.baddbmm(1, bias, 1, input, target_batch)
-        return out.squeeze()
+        noise_loss = torch.sum(
+            torch.log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
+        ).squeeze()
 
-    def reset_parameters(self):
-        init_range = 0.1
-        self.bias.data.fill_(0)
-        self.weight.data.uniform_(-init_range, init_range)
+        loss = - (model_loss + noise_loss)
+
+        return loss
+
