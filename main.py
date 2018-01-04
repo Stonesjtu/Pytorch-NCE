@@ -4,6 +4,8 @@ import sys
 import time
 import math
 
+from tqdm import tqdm
+
 import torch
 import torch.optim as optim
 import torch.autograd as autograd
@@ -17,9 +19,9 @@ from index_gru import IndexGRU
 from index_linear import IndexLinear
 
 
-logger = setup_logger('pytorch-nce')
 parser = setup_parser()
 args = parser.parse_args()
+logger = setup_logger('pt-nce-%s' % args.save)
 logger.info(args)
 
 # Set the random seed manually for reproducibility.
@@ -82,7 +84,8 @@ elif args.index_module == 'gru':
     sep_target=False
 
 else:
-    logger.error('The index module is not supported yet')
+    logger.error('The index module [%s] is not supported yet' % args.index_module)
+    raise(NotImplementedError('index module not supported'))
 
 if args.cuda:
     model.cuda()
@@ -103,7 +106,8 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
     model.train()
     model.criterion.nce_mode(args.nce)
     total_loss = 0
-    for num_batch, data_batch in enumerate(corpus.train):
+    pbar = tqdm(data_source, desc='Training PPL: ....')
+    for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
         loss = model(data, target, length)
@@ -119,11 +123,15 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
             if args.prof:
                 break
             cur_loss = total_loss / args.log_interval
-            logger.debug('| epoch {:3d} | {:5d}/{:5d} batches'
-                  ' | lr {:02.2f} | '
-                  'loss {:5.2f} | ppl {:8.2f}'.format(
-                      epoch, num_batch, len(corpus.train), lr,
-                      cur_loss, math.exp(cur_loss)))
+            ppl = math.exp(cur_loss)
+            logger.debug(
+                '| epoch {:3d} | {:5d}/{:5d} batches '
+                '| lr {:02.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
+                    epoch, num_batch, len(corpus.train),
+                    lr, cur_loss, ppl
+                  )
+            )
+            pbar.set_description('Training PPL %.1f' % ppl)
             total_loss = 0
 
 def evaluate(model, data_source, cuda=args.cuda):
@@ -163,10 +171,13 @@ if __name__ == '__main__':
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
-                logger.info('| end of epoch {:3d} | time: {:5.2f}s |'
-                    'valid ppl {:8.2f}'.format(epoch,
-                                                (time.time() - epoch_start_time),
-                                                val_ppl))
+                logger.info(
+                    '| end of epoch {:3d} | time: {:5.2f}s |'
+                    'valid ppl {:8.2f}'.format(
+                        epoch,
+                        (time.time() - epoch_start_time),
+                        val_ppl)
+                )
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
                 # Save the model if the validation loss is the best we've seen so far.
