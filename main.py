@@ -125,7 +125,6 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
                       epoch, num_batch, len(corpus.train), lr,
                       cur_loss, math.exp(cur_loss)))
             total_loss = 0
-            logger.debug('-' * 87)
 
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
@@ -164,12 +163,10 @@ if __name__ == '__main__':
                 if args.prof:
                     break
                 val_ppl = evaluate(model, corpus.valid)
-                logger.info('-' * 89)
                 logger.info('| end of epoch {:3d} | time: {:5.2f}s |'
                     'valid ppl {:8.2f}'.format(epoch,
                                                 (time.time() - epoch_start_time),
                                                 val_ppl))
-                logger.info('-' * 89)
                 with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
                     torch.save(model, f)
                 # Save the model if the validation loss is the best we've seen so far.
@@ -182,7 +179,6 @@ if __name__ == '__main__':
                     # validation dataset.
                     lr /= args.lr_decay
         except KeyboardInterrupt:
-            logger.info('-' * 89)
             logger.warning('Exiting from training early')
 
     else:
@@ -192,7 +188,5 @@ if __name__ == '__main__':
 
     # Run on test data.
     test_ppl = evaluate(model, corpus.test)
-    logger.info('=' * 89)
     logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
-    logger.info('=' * 89)
     sys.stdout.flush()
