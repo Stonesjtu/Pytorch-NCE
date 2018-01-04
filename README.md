@@ -1,13 +1,19 @@
 This NCE module is forked from the pytorch/examples repo.
 
-new arguments:
-  - `--nce`: whether to use NCE as approximation
-  - `--noise-ratio <10>`: numbers of noise samples per data sample
-  - `--norm-term <9>`: the constant normalization term `Ln(z)`
-  - `--index-module <linear>`: index module to use for NCE module (currently
-  <linear> and <gru> available, <gru> does not support PPL calculating )
-  - `--train`: train or just evaluation existing model
-  - `--vocab <None>`: use vocabulary file if specified, otherwise use the words in train.txt
+### Requirements
+
+Please run `pip install -r requirements` first to see if you have the required python lib.
+- `tqdm` is used for process bar during training
+
+### New Arguments
+
+- `--nce`: whether to use NCE as approximation
+- `--noise-ratio <10>`: numbers of noise samples per data sample
+- `--norm-term <9>`: the constant normalization term `Ln(z)`
+- `--index-module <linear>`: index module to use for NCE module (currently
+<linear> and <gru> available, <gru> does not support PPL calculating )
+- `--train`: train or just evaluation existing model
+- `--vocab <None>`: use vocabulary file if specified, otherwise use the words in train.txt
 
 ### Examples
 
@@ -35,10 +41,6 @@ python main.py --cuda --train
 - `model.py`: the wrapper of all `nn.Module`s.
 - `main.py`: entry point
 - `utils.py`: some util functions for better abstraction
-
-### Notice
-
-This specific branch `generic-NCE` contains unpublished work of mine.
 
 -----------------
 ### Modified README from Pytorch/examples
