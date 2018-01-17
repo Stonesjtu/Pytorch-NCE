@@ -1,10 +1,11 @@
 # Collections of some helper functions
 import logging
+import argparse
 
 import torch
 from torch.autograd import Variable
 
-import argparse
+from data import zero_padding
 
 def setup_parser():
     parser = argparse.ArgumentParser(
@@ -107,6 +108,7 @@ def process_data(data_batch, cuda=False, eval=False, sep_target=True):
         """
 
     batch_sentence, length = data_batch
+    batch_sentence = zero_padding(batch_sentence, length)
     if cuda:
         batch_sentence = batch_sentence.cuda()
         length = length.cuda()

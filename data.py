@@ -1,9 +1,10 @@
-# data utils of this language model: corpus reader and noise data generator
+"""data utils of this language model: corpus reader and noise data generator"""
 
 import os
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
+import tqdm
 
 
 def zero_padding(sentences, lengths):
@@ -122,7 +123,7 @@ class PaddedDataset(Dataset):
         with open(path, 'r') as f:
             sentences = []
             lengths = []
-            for line in f:
+            for line in tqdm.tqdm(f):
                 words = ['<s>'] + line.split() + ['</s>']
                 lengths.append(len(words))
                 sentence = torch.LongTensor(
@@ -130,8 +131,7 @@ class PaddedDataset(Dataset):
                 sentences.append(sentence)
         self.dictionary.trunc_special()
         lengths = torch.ShortTensor(lengths)
-        padded_sentences = zero_padding(sentences, lengths)
-        return padded_sentences, lengths
+        return sentences, lengths
 
     def __getitem__(self, index):
         return (
