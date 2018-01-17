@@ -7,14 +7,14 @@ from torch.utils.data.dataloader import DataLoader
 import tqdm
 
 
-def zero_padding(sentences, lengths):
+def zero_padding(sentences, length):
     """
     sentences: a list of sentence
-    lengths: the valid lengths of corresponding sentences
+    length: the valid length of corresponding sentences
     """
-    max_len = max(lengths)
+    max_len = max(length)
     padded_sentences = []
-    for length, sentence in zip(lengths, sentences):
+    for length, sentence in zip(length, sentences):
         padding_length = max_len - length
         padding = torch.LongTensor(padding_length).zero_()
         padded_sentence = torch.cat((sentence, padding), 0)
@@ -69,7 +69,7 @@ class PaddedDataset(Dataset):
         else:
             self.dictionary = dictionary
         self.file_path = file_path
-        self.data, self.lengths = self.tokenize(file_path)
+        self.data = self.tokenize(file_path)
 
     def _build_dict(self):
         """build the dictionary before the training phase
@@ -122,25 +122,23 @@ class PaddedDataset(Dataset):
         assert os.path.exists(path)
         with open(path, 'r') as f:
             sentences = []
-            lengths = []
             for line in tqdm.tqdm(f):
                 words = ['<s>'] + line.split() + ['</s>']
-                lengths.append(len(words))
                 sentence = torch.LongTensor(
                     [self.get_index(word) for word in words])
                 sentences.append(sentence)
         self.dictionary.trunc_special()
-        lengths = torch.ShortTensor(lengths)
-        return sentences, lengths
+        return sentences
 
     def __getitem__(self, index):
-        return (
-            self.data[index],
-            self.lengths[index],
-        )
+        return self.data[index]
 
     def __len__(self):
         return len(self.data)
+
+def pad_collate_fn(batch):
+    length = [len(sentence) for sentence in batch]
+    return zero_padding(batch, length), torch.LongTensor(length)
 
 
 class Corpus(object):
@@ -165,6 +163,7 @@ class Corpus(object):
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             pin_memory=self.pin_memory,
+            collate_fn=pad_collate_fn,
             # waiting for a new torch version to support
             # drop_last=True,
         )
