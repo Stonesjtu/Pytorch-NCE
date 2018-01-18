@@ -47,12 +47,12 @@ eval_batch_size = 1
 ################################################################## Build the criterion and model, setup the NCE and index_module
 #################################################################
 
-ntoken = len(corpus.train.dataset.dictionary)
+ntoken = len(corpus.train.dataset.vocab)
 logger.info('Vocabulary size is {}'.format(ntoken))
 
 # noise for soise sampling in NCE
 noise = build_unigram_noise(
-    torch.FloatTensor(corpus.train.dataset.dictionary.idx2count)
+    torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
 )
 if args.index_module == 'linear':
     index_module = IndexLinear(args.nhid, ntoken)

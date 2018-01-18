@@ -141,5 +141,6 @@ def build_unigram_noise(freq):
     """
     total = freq.sum()
     noise = freq / total
+    print(freq)
     assert abs(noise.sum() - 1) < 0.001
     return noise
