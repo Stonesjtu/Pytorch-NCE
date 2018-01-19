@@ -46,13 +46,13 @@ class LMDataset(Dataset):
         assert os.path.exists(path)
         with open(path, 'r') as f:
             sentences = []
-            for line in tqdm(f, desc='Processing file: {}'.format(path)):
-                sentence = ['<s>'] + line.split() + ['</s>']
+            for sentence in tqdm(f, desc='Processing file: {}'.format(path)):
                 sentences.append(sentence)
         self.data = sentences
 
     def __getitem__(self, index):
-        sentence = self.data[index]
+        raw_sentence = self.data[index]
+        sentence = ['<s>'] + raw_sentence.split() + ['</s>']
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
