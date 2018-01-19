@@ -13,6 +13,8 @@ def setup_parser():
                         help='location of the data corpus')
     parser.add_argument('--vocab', type=str, default=None,
                         help='location of the vocabulary file, without which will use vocab of training corpus')
+    parser.add_argument('--min-freq', type=int, default=1,
+                        help='minimal frequency for word to build vocabulary')
     parser.add_argument('--emsize', type=int, default=200,
                         help='size of word embeddings')
     parser.add_argument('--nhid', type=int, default=200,
@@ -141,6 +143,5 @@ def build_unigram_noise(freq):
     """
     total = freq.sum()
     noise = freq / total
-    print(freq)
     assert abs(noise.sum() - 1) < 0.001
     return noise

@@ -41,6 +41,7 @@ corpus = data.Corpus(
     batch_size=args.batch_size,
     shuffle=True,
     pin_memory=args.cuda,
+    min_freq=args.min_freq,
 )
 
 eval_batch_size = 1
