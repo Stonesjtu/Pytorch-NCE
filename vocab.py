@@ -22,8 +22,7 @@ class Vocab(object):
             numerical identifiers.
         idx2word: A list of token strings indexed by their numerical identifiers.
     """
-    def __init__(self, counter, max_size=None, min_freq=1, specials=['<pad>'],
-                 vectors=None):
+    def __init__(self, counter, max_size=None, min_freq=1):
         """Create a Vocab object from a collections.Counter.
         Arguments:
             counter: collections.Counter object holding the frequencies of
@@ -32,58 +31,52 @@ class Vocab(object):
                 maximum. Default: None.
             min_freq: The minimum frequency needed to include a token in the
                 vocabulary. Values less than 1 will be set to 1. Default: 1.
-            specials: The list of special tokens (e.g., padding or eos) that
-                will be prepended to the vocabulary in addition to an <unk>
-                token. Default: ['<pad>']
-            vectors: One of either the available pretrained vectors
-                or custom pretrained vectors (see Vocab.load_vectors);
-                or a list of aforementioned vectors
         """
         self.freqs = counter
         self.max_size = max_size
         self.min_freq= min_freq
-        self.specials = specials
-        self.vectors = vectors
+        self.specials = ['<unk>', '<s>']
         self.build()
 
 
     def build(self):
-        """Build the required vocabulary according to attributes"""
+        """Build the required vocabulary according to attributes
+
+        We need an explicit <unk> for NCE because this improve the precision of
+        word frequency estimation in noise sampling
+        """
         counter = self.freqs.copy()
         min_freq = max(self.min_freq, 1)
-        counter.update(self.specials)
 
         self.idx2word = list(self.specials)
-        self.idx2count = []
 
-        counter.subtract({tok: counter[tok] for tok in self.specials})
+        # Do not count the BOS and UNK as frequency term
+        for word in self.specials:
+            del counter[word]
         max_size = None if self.max_size is None else self.max_size + len(self.idx2word)
 
         # sort by frequency, then alphabetically
         words_and_frequencies = sorted(counter.items(), key=lambda tup: tup[0])
         words_and_frequencies.sort(key=lambda tup: tup[1], reverse=True)
 
+        unk_freq = 0
         for word, freq in words_and_frequencies:
-            if freq < min_freq or len(self.idx2word) == max_size:
-                break
+            if freq < min_freq:
+                # count the unk frequency
+                unk_freq += freq
+                continue
+            if len(self.idx2word) == max_size:
+                continue
             self.idx2word.append(word)
-            self.idx2count.append(freq)
-        self.word2idx = {
-            word: idx for idx, word in enumerate(self.idx2word)
-        }
+
         self.word2idx = defaultdict(_default_unk_index)
-        self.word2idx.update({tok: i for i, tok in enumerate(self.specials)})
+        self.word2idx.update({
+            word: idx for idx, word in enumerate(self.idx2word)
+        })
 
-    def save(self, filename):
-        """Save the counter of vocabulary for speed performance
-
-        The counter is the most time-consuming object to obtain,
-        so we only save the counter for convinient
-        """
-        pickle.dump(self.freqs, open(filename, 'wb'))
-
-    def load(self, filename):
-        self.freqs = pickle.load(open(filename, 'rb'))
+        self.idx2count = [self.freqs[word] for word in self.idx2word]
+        self.idx2count[0] += unk_freq
+        self.idx2count[1] = 0
 
     def __eq__(self, other):
         if self.freqs != other.freqs:
@@ -105,15 +98,26 @@ class Vocab(object):
                 self.idx2word.append(w)
                 self.word2idx[w] = len(self.idx2word) - 1
 
-    def write_txt(self, filename):
-        """Write the vocabulary into text file"""
-        write_str = ['{} {}'.format(pair) for pair in zip(self.idx2word, self.idx2count)]
-        with open(filename, 'w') as f:
-            f.writelines(write_str)
+    def write_freq(self, freq_file):
+        """Write the word-frequency pairs into text file"""
+        with open(freq_file, 'w') as f:
+            for word, freq in self.freqs.most_common():
+                f.writelines('{} {}\n'.format(word, freq))
 
 
-def build_vocab(filename, min_freq, force_recount=False):
+def check_vocab(vocab):
+    """A util function to check the vocabulary correctness"""
+    ## one word for one index
+    assert len(vocab.idx2word) == len(vocab.word2idx)
+
+    # no duplicate words in idx2word
+    assert len(set(vocab.idx2word)) == len(vocab.idx2word)
+
+def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
     """Build vocabulary file with each line the word and frequency
+
+    The vocabulary object is cached at the first build, aiming at reducing
+    the time cost for pre-process during training large dataset
 
     Args:
         - sentences: sentences with BOS and EOS
@@ -125,19 +129,29 @@ def build_vocab(filename, min_freq, force_recount=False):
         - vocab: the Vocab object
     """
     counter = Counter()
-    cache_file = filename+'.Vocab'
+    cache_file = os.path.join(base_path, 'vocab.pkl')
+
     if os.path.exists(cache_file) and not force_recount:
-        logger.info('Load cached vocabulary object')
+        logger.debug('Load cached vocabulary object')
         vocab = pickle.load(open(cache_file, 'rb'))
         vocab.min_freq = min_freq
         vocab.build()
-        logger.info('Load cached vocabulary object finished')
+        logger.debug('Load cached vocabulary object finished')
     else:
-        logger.info('Refreshing vocabulary')
-        for line in tqdm(open(filename, 'r'), desc='Building vocabulary: '):
-            counter.update(line.split())
-            counter.update(['<s>', '</s>'])
-        vocab = Vocab(counter, min_freq=min_freq, specials=[])
-        logger.info('Refreshing vocabulary finished')
+        logger.debug('Refreshing vocabulary')
+        for filename in file_list:
+            full_path = os.path.join(base_path, filename)
+            for line in tqdm(open(full_path, 'r'), desc='Building vocabulary: '):
+                counter.update(line.split())
+                counter.update(['<s>', '</s>'])
+        vocab = Vocab(counter, min_freq=min_freq)
+        vocab.build()
+        logger.debug('Refreshing vocabulary finished')
+
+        # saving for future uses
+        freq_file = os.path.join(base_path, 'freq.txt')
+        vocab.write_freq(freq_file)
         pickle.dump(vocab, open(cache_file, 'wb'))
+
+    check_vocab(vocab)
     return vocab

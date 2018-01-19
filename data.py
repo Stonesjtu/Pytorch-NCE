@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
-from vocab import build_vocab
+from vocab import get_vocab
 
 def zero_padding(sentences, length):
     """
@@ -26,7 +26,7 @@ def zero_padding(sentences, length):
     return padded_sentences
 
 
-class PaddedDataset(Dataset):
+class LMDataset(Dataset):
     """dataset that zero-pads all sentence into same length
     Attributes:
         vocab_path: dictionary file, one word each line
@@ -35,21 +35,11 @@ class PaddedDataset(Dataset):
     Parameters:
         dictionary: a word-to-index mapping, will build a new one if not provided
     """
-    def __init__(self, file_path, vocab=None, vocab_path=None):
-        super(PaddedDataset, self).__init__()
+    def __init__(self, file_path, vocab=None):
+        super(LMDataset, self).__init__()
+        self.vocab= vocab
         self.file_path = file_path
-        self.vocab_path = vocab_path
-        self.file_path = file_path
-
         self.tokenize(file_path)
-        if not vocab:
-            self.vocab = build_vocab(file_path, min_freq=1)
-        else:
-            self.vocab = vocab
-
-    def get_sentence_index(self, sentence):
-        return [self.vocab.word2idx[word] for word in sentence]
-
 
     def tokenize(self, path):
         """Tokenizes a text file."""
@@ -62,7 +52,8 @@ class PaddedDataset(Dataset):
         self.data = sentences
 
     def __getitem__(self, index):
-        return self.get_sentence_index(self.data[index])
+        sentence = self.data[index]
+        return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
         return len(self.data)
@@ -74,29 +65,29 @@ def pad_collate_fn(batch):
 
 
 class Corpus(object):
-    def __init__(self, path, vocab_path=None, batch_size=1, shuffle=False, pin_memory=False):
+    def __init__(self, path, vocab_path=None, batch_size=1, shuffle=False,
+                 pin_memory=False, update_vocab=False, min_freq=1):
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.pin_memory = pin_memory
-        self.train = self.get_dataloader(
-            PaddedDataset(os.path.join(path, 'train.txt'), vocab_path=vocab_path)
-        )
-        self.vocab = self.train.dataset.vocab
-        self.valid = self.get_dataloader(
-            PaddedDataset(os.path.join(path, 'valid.txt'), self.vocab)
-        )
-        self.test = self.get_dataloader(
-            PaddedDataset(os.path.join(path, 'test.txt'), self.vocab)
-        )
+        self.base_path = path
+        self.update_vocab = update_vocab
 
-    def get_dataloader(self, dataset):
+        self.vocab = get_vocab(path, ['train.txt'], min_freq=min_freq)
+        self.train = self.get_dataloader('train.txt')
+        self.valid = self.get_dataloader('valid.txt')
+        self.test = self.get_dataloader('test.txt')
+
+    def get_dataloader(self, filename):
+        full_path = os.path.join(self.base_path, filename)
+        dataset = LMDataset(full_path, vocab=self.vocab)
         return DataLoader(
             dataset=dataset,
             batch_size=self.batch_size,
             shuffle=self.shuffle,
             pin_memory=self.pin_memory,
             collate_fn=pad_collate_fn,
+            # num_workers=1,
             # waiting for a new torch version to support
             # drop_last=True,
         )
-
