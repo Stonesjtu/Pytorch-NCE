@@ -180,7 +180,6 @@ class NCELoss(nn.Module):
                 - tensor: a pytorch Tensor or Variable
             """
             EPSILON = 1e-10
-            return torch.log(tensor)
             return torch.log(EPSILON + tensor)
 
         model_loss = safe_log(prob_model / (
