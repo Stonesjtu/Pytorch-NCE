@@ -171,12 +171,24 @@ class NCELoss(nn.Module):
         Returns:
             - loss: a mis-classification loss for every single case
         """
-        model_loss = torch.log(prob_model / (
+        def safe_log(tensor):
+            """A wrapper to compute logrithm
+
+            An epsilon is pre added for the sake of numeric stability
+
+            Args:
+                - tensor: a pytorch Tensor or Variable
+            """
+            EPSILON = 1e-10
+            return torch.log(tensor)
+            return torch.log(EPSILON + tensor)
+
+        model_loss = safe_log(prob_model / (
             prob_model + self.noise_ratio * prob_target_in_noise
         ))
 
         noise_loss = torch.sum(
-            torch.log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
+            safe_log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
         ).squeeze()
 
         loss = - (model_loss + noise_loss)
