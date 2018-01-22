@@ -7,6 +7,7 @@ import math
 from tqdm import tqdm
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import torch.autograd as autograd
 
@@ -68,7 +69,7 @@ if args.index_module == 'linear':
         ntoken, args.emsize, args.nhid, args.nlayers,
         criterion=criterion, dropout=args.dropout,
     )
-    sep_target=True
+    sep_target = True
 
 elif args.index_module == 'gru':
     logger.warning('Falling into one layer GRU due to indx_GRU supporting')
@@ -82,7 +83,7 @@ elif args.index_module == 'gru':
     model = GenModel(
         criterion=nce_criterion,
     )
-    sep_target=False
+    sep_target = False
 
 else:
     logger.error('The index module [%s] is not supported yet' % args.index_module)
@@ -90,6 +91,7 @@ else:
 
 if args.cuda:
     model.cuda()
+
 logger.info('model definition:\n %s', model)
 #################################################################
 # Training code
@@ -106,12 +108,13 @@ def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
     # Turn on training mode which enables dropout.
     model.train()
     model.criterion.nce_mode(args.nce)
+    p_model = nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = model(data, target, length)
+        loss = p_model(data, target, length).mean()
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.

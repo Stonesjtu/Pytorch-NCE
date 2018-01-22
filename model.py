@@ -33,7 +33,7 @@ class RNNModel(nn.Module):
 
     def forward(self, input, target, length):
 
-        mask = get_mask(length)
+        mask = get_mask(length.data, max_len=input.size(1))
         rnn_output = self._rnn(input)
         loss = self.criterion(target, rnn_output)
         loss = torch.masked_select(loss, mask)

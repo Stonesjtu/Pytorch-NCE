@@ -83,9 +83,10 @@ def setup_logger(logger_name):
 
 
 # Get the mask matrix of a batched input
-def get_mask(lengths, cut_tail=0):
+def get_mask(lengths, cut_tail=0, max_len=None):
     assert lengths.min() >= cut_tail
-    max_len = lengths.max()
+    if max_len is None:
+        max_len = lengths.max()
     size = len(lengths)
     mask = lengths.new().byte().resize_(size, max_len).zero_()
     for i in range(size):
@@ -129,6 +130,7 @@ def process_data(data_batch, cuda=False, eval=False, sep_target=True):
 
     data = Variable(data.contiguous(), volatile=eval)
     target = Variable(target.contiguous(), requires_grad=False)
+    effective_length = Variable(effective_length)
 
     return data, target, effective_length
 
