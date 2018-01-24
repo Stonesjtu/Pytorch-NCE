@@ -46,9 +46,12 @@ class AliasMethod(object):
         '''
         K = self.alias.size(0)
 
-        kk = torch.LongTensor(np.random.randint(0,K, size=size)).view(-1)
-        prob = self.prob[kk]
-        alias = self.alias[kk]
+
+        prob = self.prob.cuda()
+        alias = self.alias.cuda()
+        kk = torch.LongTensor(np.random.randint(0,K, size=size)).view(-1).cuda()
+        prob = prob[kk]
+        alias = alias[kk]
         # b is whether a random number is greater than q
         b = torch.bernoulli(prob)
         oq = kk.mul(b.long())

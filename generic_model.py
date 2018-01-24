@@ -13,7 +13,7 @@ class GenModel(nn.Module):
 
     def forward(self, input, target, length):
 
-        mask = get_mask(length, cut_tail=0)
+        mask = get_mask(length.data, cut_tail=0)
 
         # <s> is non-sense in this model, thus the loss should be
         # masked manually
