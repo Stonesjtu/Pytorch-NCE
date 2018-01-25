@@ -153,7 +153,7 @@ def evaluate(model, data_source, cuda=args.cuda):
         data, target, length = process_data(data_batch, cuda=cuda, eval=True, sep_target=sep_target)
 
         loss = model(data, target, length)
-        cur_length = length.sum()
+        cur_length = length.data.sum()
         eval_loss += loss.data[0] * cur_length
         total_length += cur_length
 
