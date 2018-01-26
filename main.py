@@ -98,7 +98,7 @@ logger.info('model definition:\n %s', model)
 #################################################################
 
 
-def train(model, data_source, lr=1.0, weight_decay=1e-5, momentum=0.9):
+def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
         params=model.parameters(),
         lr=lr,
@@ -160,39 +160,39 @@ def evaluate(model, data_source, cuda=args.cuda):
     return math.exp(eval_loss/total_length)
 
 
-if __name__ == '__main__':
+def run_epoch(epoch, lr, best_val_ppl):
+    """A training epoch includes training, evaluation and logging"""
+    epoch_start_time = time.time()
+    train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+    val_ppl = evaluate(model, corpus.valid)
+    logger.warn(
+        '| end of epoch {:3d} | time: {:5.2f}s |'
+        'valid ppl {:8.2f}'.format(
+            epoch,
+            (time.time() - epoch_start_time),
+            val_ppl)
+    )
+    with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
+        torch.save(model, f)
+    # Save the model if the validation loss is the best we've seen so far.
+    if not best_val_ppl or val_ppl < best_val_ppl:
+        with open(args.save, 'wb') as f:
+            torch.save(model, f)
+        best_val_ppl = val_ppl
+    else:
+        # Anneal the learning rate if no improvement has been seen in the
+        # validation dataset.
+        lr /= args.lr_decay
+    return lr, best_val_ppl
 
+if __name__ == '__main__':
     lr = args.lr
     best_val_ppl = None
-
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
         try:
-            # Loop over epochs.
-            for epoch in range(1, args.epochs + 1):
-                epoch_start_time = time.time()
-                train(model, corpus.train, lr=lr, weight_decay=args.weight_decay)
-                if args.prof:
-                    break
-                val_ppl = evaluate(model, corpus.valid)
-                logger.info(
-                    '| end of epoch {:3d} | time: {:5.2f}s |'
-                    'valid ppl {:8.2f}'.format(
-                        epoch,
-                        (time.time() - epoch_start_time),
-                        val_ppl)
-                )
-                with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
-                    torch.save(model, f)
-                # Save the model if the validation loss is the best we've seen so far.
-                if not best_val_ppl or val_ppl < best_val_ppl:
-                    with open(args.save, 'wb') as f:
-                        torch.save(model, f)
-                    best_val_ppl = val_ppl
-                else:
-                    # Anneal the learning rate if no improvement has been seen in the
-                    # validation dataset.
-                    lr /= args.lr_decay
+            for epoch in range(1, args.epochs // 4 + 1):
+                lr, best_val_ppl = run_epoch(epoch, lr, best_val_ppl)
         except KeyboardInterrupt:
             logger.warning('Exiting from training early')
 
