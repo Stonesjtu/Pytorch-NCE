@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 
 from utils import get_mask
-from basis_embedding import BasisEmbedding
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a criterion (decoder and loss function)."""
@@ -11,8 +10,7 @@ class RNNModel(nn.Module):
     def __init__(self, ntoken, ninp, nhid, nlayers, criterion, dropout=0.5):
         super(RNNModel, self).__init__()
         self.drop = nn.Dropout(dropout)
-        # self.encoder = nn.Embedding(ntoken, ninp)
-        self.encoder = BasisEmbedding(ntoken, ninp, num_basis=4, num_clusters=8000)
+        self.encoder = nn.Embedding(ntoken, ninp)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
 
         self.nhid = nhid

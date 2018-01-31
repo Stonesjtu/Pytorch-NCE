@@ -2,7 +2,6 @@
 import logging
 import argparse
 
-import torch
 from torch.autograd import Variable
 
 
@@ -15,12 +14,14 @@ def setup_parser():
                         help='location of the vocabulary file, without which will use vocab of training corpus')
     parser.add_argument('--min-freq', type=int, default=1,
                         help='minimal frequency for word to build vocabulary')
+
     parser.add_argument('--emsize', type=int, default=200,
                         help='size of word embeddings')
     parser.add_argument('--nhid', type=int, default=200,
                         help='number of hidden units per layer')
     parser.add_argument('--nlayers', type=int, default=2,
                         help='number of layers')
+
     parser.add_argument('--lr', type=float, default=1.0,
                         help='initial learning rate')
     parser.add_argument('--weight-decay', type=float, default=1e-5,
@@ -35,6 +36,7 @@ def setup_parser():
                         help='batch size')
     parser.add_argument('--dropout', type=float, default=0.2,
                         help='dropout applied to layers (0 = no dropout)')
+
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
     parser.add_argument('--cuda', action='store_true',
@@ -43,6 +45,11 @@ def setup_parser():
                         help='report interval')
     parser.add_argument('--save', type=str, default='model.pt',
                         help='path to save the final model')
+    parser.add_argument('--train', action='store_true',
+                        help='set train mode, otherwise only evaluation is performed')
+    parser.add_argument('--prof', action='store_true',
+                        help='Enable profiling mode, will execute only one batch data')
+
     parser.add_argument('--nce', action='store_true',
                         help='use NCE as loss function')
     parser.add_argument('--index-module', type=str, default='linear',
@@ -51,12 +58,12 @@ def setup_parser():
                         help='set the noise ratio of NCE sampling')
     parser.add_argument('--norm-term', type=int, default=9,
                         help='set the log normalization term of NCE sampling')
-    parser.add_argument('--train', action='store_true',
-                        help='set train mode, otherwise only evaluation is performed')
-    parser.add_argument('--tb-name', type=str, default=None,
-                        help='the name which would be used in tensorboard record')
-    parser.add_argument('--prof', action='store_true',
-                        help='Enable profiling mode, will execute only one batch data')
+
+    parser.add_argument('--num-basis', type=int, default=4,
+                        help='number of basis for embedding, the same as #sub-quantizer')
+    parser.add_argument('--num-cluster', type=int, default=800,
+                        help='number of clusters for embedding, the same as #k')
+
     return parser
 
 

@@ -18,6 +18,7 @@ from utils import process_data, build_unigram_noise, setup_parser, setup_logger
 from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
+from basis_embedding import BasisEmbedding
 
 
 parser = setup_parser()
@@ -45,52 +46,64 @@ corpus = data.Corpus(
     min_freq=args.min_freq,
 )
 
-eval_batch_size = 1
 ################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
 ntoken = len(corpus.train.dataset.vocab)
 logger.info('Vocabulary size is {}'.format(ntoken))
 
-# noise for soise sampling in NCE
-noise = build_unigram_noise(
-    torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
-)
-if args.index_module == 'linear':
-    criterion = IndexLinear(
-        args.nhid,
-        ntoken,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
+def setup_model(ntoken, args):
+    """Setup the model by the arguments passed to main"""
+    # noise for soise sampling in NCE
+    noise = build_unigram_noise(
+        torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
     )
-    criterion.nce = args.nce
-    model = RNNModel(
-        ntoken, args.emsize, args.nhid, args.nlayers,
-        criterion=criterion, dropout=args.dropout,
-    )
-    sep_target = True
+    if args.index_module == 'linear':
+        criterion = IndexLinear(
+            args.nhid,
+            ntoken,
+            noise=noise,
+            noise_ratio=args.noise_ratio,
+            norm_term=args.norm_term,
+        )
+        criterion.nce = args.nce
+        model = RNNModel(
+            ntoken, args.emsize, args.nhid, args.nlayers,
+            criterion=criterion, dropout=args.dropout,
+        )
+        sep_target = True
 
-elif args.index_module == 'gru':
-    logger.warning('Falling into one layer GRU due to indx_GRU supporting')
-    nce_criterion = IndexGRU(
-        ntoken, args.nhid, args.nhid,
-        args.dropout,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
-    )
-    model = GenModel(
-        criterion=nce_criterion,
-    )
-    sep_target = False
+    elif args.index_module == 'gru':
+        logger.warning('Falling into one layer GRU due to indx_GRU supporting')
+        nce_criterion = IndexGRU(
+            ntoken, args.nhid, args.nhid,
+            args.dropout,
+            noise=noise,
+            noise_ratio=args.noise_ratio,
+            norm_term=args.norm_term,
+        )
+        model = GenModel(
+            criterion=nce_criterion,
+            dropout=args.dropout,
+        )
 
-else:
-    logger.error('The index module [%s] is not supported yet' % args.index_module)
-    raise(NotImplementedError('index module not supported'))
+    else:
+        logger.error('The index module [%s] is not supported yet' % args.index_module)
+        raise NotImplementedError('index module not supported')
 
-if args.cuda:
-    model.cuda()
+    # build the encoder for BasisEmbedding (probably)
+    bs_embedding = BasisEmbedding(ntoken, args.emsize, args.num_basis, args.num_cluster)
+    if args.index_module == 'linear':
+        model.encoder = bs_embedding
+    else:
+        model.criterion.index_module.encoder[0] = bs_embedding
+
+    if args.cuda:
+        model.cuda()
+
+    return model, bs_embedding, sep_target
+
+model, encoder, sep_target = setup_model(ntoken, args)
 
 logger.info('model definition:\n %s', model)
 #################################################################
@@ -145,7 +158,6 @@ def evaluate(model, data_source, cuda=args.cuda):
     eval_loss = 0
     total_length = 0
 
-    data_source.batch_size = eval_batch_size
     with torch.no_grad():
         for data_batch in data_source:
             data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
@@ -163,7 +175,7 @@ def run_epoch(epoch, lr, best_val_ppl):
     epoch_start_time = time.time()
     train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
     val_ppl = evaluate(model, corpus.valid)
-    logger.warn(
+    logger.warning(
         '| end of epoch {:3d} | time: {:5.2f}s |'
         'valid ppl {:8.2f}'.format(
             epoch,
@@ -186,11 +198,18 @@ def run_epoch(epoch, lr, best_val_ppl):
 if __name__ == '__main__':
     lr = args.lr
     best_val_ppl = None
+    basis_aneal_freq = args.epochs // 4
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
         try:
             for epoch in range(1, args.epochs + 1):
                 lr, best_val_ppl = run_epoch(epoch, lr, best_val_ppl)
+                if epoch % basis_aneal_freq == 0:
+                    # reset the learning rate and revert basis mode
+                    lr = args.lr
+                    target_mode = not encoder.basis
+                    logger.warning('Setting basis mode to {}'.format(target_mode))
+                    encoder.basis_mode(target_mode)
         except KeyboardInterrupt:
             logger.warning('Exiting from training early')
 
