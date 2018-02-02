@@ -134,7 +134,8 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
     if os.path.exists(cache_file) and not force_recount:
         logger.debug('Load cached vocabulary object')
         vocab = pickle.load(open(cache_file, 'rb'))
-        vocab.min_freq = min_freq
+        if not min_freq is None:
+            vocab.min_freq = min_freq
         vocab.build()
         logger.debug('Load cached vocabulary object finished')
     else:
