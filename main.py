@@ -146,13 +146,14 @@ def evaluate(model, data_source, cuda=args.cuda):
     total_length = 0
 
     data_source.batch_size = eval_batch_size
-    for data_batch in data_source:
-        data, target, length = process_data(data_batch, cuda=cuda, eval=True, sep_target=sep_target)
+    with torch.no_grad():
+        for data_batch in data_source:
+            data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
 
-        loss = model(data, target, length)
-        cur_length = length.data.sum()
-        eval_loss += loss.data[0] * cur_length
-        total_length += cur_length
+            loss = model(data, target, length)
+            cur_length = length.data.sum()
+            eval_loss += loss.data[0] * cur_length
+            total_length += cur_length
 
     return math.exp(eval_loss/total_length)
 
