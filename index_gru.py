@@ -53,7 +53,7 @@ class IndexGRU(NCELoss):
         # The noise for <s> (sentence start) is non-sense
         rnn_output, _last_hidden = self.rnn(input_emb) # (B, N, H)
 
-        target_score = self.get_target_score(target_idx, input)
+        target_score = self.get_target_score(target_idx, rnn_output)
 
         if noise_idx is None:
             return target_score
