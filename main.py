@@ -58,6 +58,7 @@ def setup_model(ntoken, args):
     noise = build_unigram_noise(
         torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
     )
+    sep_target = True
     if args.index_module == 'linear':
         criterion = IndexLinear(
             args.nhid,
@@ -71,7 +72,6 @@ def setup_model(ntoken, args):
             ntoken, args.emsize, args.nhid, args.nlayers,
             criterion=criterion, dropout=args.dropout,
         )
-        sep_target = True
 
     elif args.index_module == 'gru':
         logger.warning('Falling into one layer GRU due to indx_GRU supporting')
@@ -86,6 +86,7 @@ def setup_model(ntoken, args):
             criterion=nce_criterion,
             dropout=args.dropout,
         )
+        sep_target = False
 
     else:
         logger.error('The index module [%s] is not supported yet' % args.index_module)
@@ -96,7 +97,7 @@ def setup_model(ntoken, args):
     if args.index_module == 'linear':
         model.encoder = bs_embedding
     else:
-        model.criterion.index_module.encoder[0] = bs_embedding
+        model.criterion.encoder[0] = bs_embedding
 
     if args.cuda:
         model.cuda()
