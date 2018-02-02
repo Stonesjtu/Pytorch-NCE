@@ -94,13 +94,12 @@ def get_mask(lengths, cut_tail=0, max_len=None):
     return Variable(mask)
 
 
-def process_data(data_batch, cuda=False, eval=False, sep_target=True):
+def process_data(data_batch, cuda=False, sep_target=True):
     """A data pre-processing util which construct the input `Variable` for model
 
     Args:
         - data_batch: a batched data from `PaddedDataset`
         - cuda: indicates whether to put data into GPU
-        - eval: turn eval on will increase inference speed
         - sep_target: return separated input and target if turned on
 
     Returns:
@@ -128,7 +127,7 @@ def process_data(data_batch, cuda=False, eval=False, sep_target=True):
         data = batch_sentence
         target = batch_sentence
 
-    data = Variable(data.contiguous(), volatile=eval)
+    data = Variable(data.contiguous())
     target = Variable(target.contiguous(), requires_grad=False)
     effective_length = Variable(effective_length)
 
