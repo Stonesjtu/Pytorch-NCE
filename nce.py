@@ -29,9 +29,8 @@ class NCELoss(nn.Module):
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
         norm_term: the normalization term (lnZ in paper)
         size_average: average the loss by batch size
-        normed_eval: using normalized probability during evaluation
-        index_module: a nn module which takes target and noise idx (maybe
-        extra parameters) and outputs the corresponding likelihoods.
+        reduce: returned the loss for each target_idx if True,
+        this will ignore the value of `size_average`
 
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
@@ -48,8 +47,10 @@ class NCELoss(nn.Module):
 
     Shape:
     """
+
+    nce = True
+
     def __init__(self,
-                 index_module,
                  noise,
                  noise_ratio=10,
                  norm_term=9,
@@ -60,7 +61,6 @@ class NCELoss(nn.Module):
                  ):
         super(NCELoss, self).__init__()
 
-        self.index_module = index_module
         self.register_buffer('noise', noise)
         self.alias = AliasMethod(noise)
         self.noise_ratio = noise_ratio
@@ -69,26 +69,13 @@ class NCELoss(nn.Module):
         self.reduce = reduce
         self.per_word = per_word
         self.nce = nce
-        self.ce_loss = nn.CrossEntropyLoss(reduce=False)
-
-
-    # set the NCE mode for this module. Similar with module.train()/eval()
-    def disable_nce(self):
-        self.nce = False
-        self.index_module.nce = False
-
-    def enable_nce(self):
-        self.nce = True
-        self.index_module.nce = True
-
-    def nce_mode(self, status):
-        if status:
-            self.enable_nce()
-        else:
-            self.disable_nce()
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
+
+        The `forward` is the same among all NCELoss submodules, it
+        takes care of generating noises and calculating the loss
+        given target and noise scores.
         """
 
         batch = target.size(0)
@@ -115,12 +102,7 @@ class NCELoss(nn.Module):
 
         else:
             # Fallback into conventional cross entropy
-            out = self.index_module(target, None, *args, **kwargs)
-            loss = self.ce_loss(out, target.view(-1)).view(batch, max_len)
-        # else:
-        #     out = self.index_module(target, None, *args, **kwargs)
-        #     nll = out.sub(self.norm_term)
-        #     loss = -1 * nll.sum()
+            loss = self.ce_loss(target, *args, **kwargs)
 
         if self.reduce:
             if self.size_average:
@@ -153,11 +135,36 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        target_prob, noise_prob = self.index_module(target_idx, noise_idx, *args, **kwargs)
+        target_prob, noise_prob = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
         target_prob = target_prob.sub(self.norm_term).exp()
         noise_prob = noise_prob.sub(self.norm_term).exp()
         return target_prob, noise_prob
+
+    def get_score(self, target_idx, noise_idx, *args, **kwargs):
+        """Get the target and noise scores given input
+
+        This method should be override by inherit classes
+
+        Returns:
+            - target_score: real valued score for each target index
+            - noise_score: real valued score for each noise index
+        """
+        raise NotImplementedError()
+
+    def ce_loss(self, target_idx, *args, **kwargs):
+        """Get the conventional CrossEntropyLoss
+
+        The returned loss should be of the same size of `target`
+
+        Args:
+            - target_idx: batched target index
+            - args, kwargs: any arbitrary input if needed by sub-class
+
+        Returns:
+            - loss: the estimated loss for each target
+        """
+        raise NotImplementedError()
 
     def nce_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
         """Compute the classification loss given all four probabilities
@@ -172,7 +179,7 @@ class NCELoss(nn.Module):
             - loss: a mis-classification loss for every single case
         """
         def safe_log(tensor):
-            """A wrapper to compute logrithm
+            """A wrapper to compute logarithm
 
             An epsilon is pre added for the sake of numeric stability
 
@@ -193,4 +200,3 @@ class NCELoss(nn.Module):
         loss = - (model_loss + noise_loss)
 
         return loss
-

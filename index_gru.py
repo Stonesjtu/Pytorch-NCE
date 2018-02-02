@@ -3,7 +3,9 @@
 import torch
 import torch.nn as nn
 
-class IndexGRU(nn.Module):
+from nce import NCELoss
+
+class IndexGRU(NCELoss):
     """An indexed module for generic NCE
 
     This module is a container of nn.Embedding,
@@ -20,16 +22,15 @@ class IndexGRU(nn.Module):
         - target_idx:(B, N) padded target index
         - noise_idx:(B, N, Nr) padded noise index
     """
-    nce = True
 
-    def __init__(self, ntoken, ninp, nhid, dropout=0.2):
-        super(IndexGRU, self).__init__()
+    def __init__(self, ntoken, ninp, nhid, dropout,
+                 *args, **kwargs):
+        super(IndexGRU, self).__init__(*args, **kwargs)
 
         self.ntoken = ntoken
         self.nhid = nhid
         self.ninp = ninp
 
-        dropout = 0.2
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Sequential(
             nn.Embedding(ntoken, ninp),
@@ -42,23 +43,58 @@ class IndexGRU(nn.Module):
             nn.Linear(nhid, 1),
         )
 
-    def forward(self, target_idx, noise_idx, input):
-        input_emb = self.encoder(input) # (B, N, E)
-        # The noise for <s> (sentence start) is non-sense
-        rnn_output, _last_hidden = self.rnn(input_emb) # (B, N, H)
-        # there's a time-step shift in the following code.
-        # because noise_output goes through one more RNN cell
-        effective_rnn_output = rnn_output[:, 1:]
-        target_score = self.scorer(effective_rnn_output).squeeze()
+    def get_score(self, target_idx, noise_idx, input):
 
         if not self.nce:
             #TODO: evaluate Perplexity
             raise(NotImplementedError('CE evaluation mode for GRU is not implemented yet'))
-            fake_score = torch.Tensor(*target_idx.size(), self.ntoken)
+
+        input_emb = self.encoder(input) # (B, N, E)
+        # The noise for <s> (sentence start) is non-sense
+        rnn_output, _last_hidden = self.rnn(input_emb) # (B, N, H)
+
+        target_score = self.get_target_score(target_idx, input)
+
+        if noise_idx is None:
+            return target_score
 
         noise_score = self.get_noise_score(noise_idx, rnn_output)
 
         return target_score, noise_score
+
+    def ce_loss(self, target_idx, input):
+        """Compute the CrossEntropyLoss of target index given input
+
+        The loss is an approximation to real CrossEntropyLoss. Due to
+        the limitation of generic NCE structure, the score among the whole
+        vocabulary is intractable to compute.
+
+        Args:
+            - target_idx: the batched target index
+            - input: batched input
+
+        Returns:
+            - output: the loss for each target_idx
+        """
+        target_score = self.forward(target_idx, None, input) - self.norm_term
+        return target_score
+
+
+    def get_target_score(self, noise_idx, rnn_output):
+        """Get the score of target word given supervised context
+
+        Args:
+            - target_idx: (B, N) the target word index
+            - rnn_output: output of rnn model
+
+        Return:
+            - target_score: (B, N) score for target word index
+        """
+        # there's a time-step shift in the following code.
+        # because noise_output goes through one more RNN cell
+        effective_rnn_output = rnn_output[:, 1:]
+        return self.scorer(effective_rnn_output).squeeze()
+
 
     def get_noise_score(self, noise_idx, rnn_output):
         """Get the score of noise given supervised context

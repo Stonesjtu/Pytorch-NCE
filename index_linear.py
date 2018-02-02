@@ -3,7 +3,9 @@
 import torch
 import torch.nn as nn
 
-class IndexLinear(nn.Linear):
+from nce import NCELoss
+
+class IndexLinear(NCELoss):
     """A linear layer that only decodes the results of provided indices
 
     Args:
@@ -20,13 +22,13 @@ class IndexLinear(nn.Linear):
         - target_score :math:`(N, 1)`
         - noise_score :math:`(N, N_r)` the un-normalized score
     """
-    nce = True
 
-    def __init__(self, input_size, output_size):
-        super(IndexLinear, self).__init__(input_size, output_size)
-        self.reset_parameters()
+    def __init__(self, input_size, output_size, *args, **kwargs):
+        super(IndexLinear, self).__init__(*args, **kwargs)
+        self.linear = nn.Linear(input_size, output_size)
+        self.ce = nn.CrossEntropyLoss(reduce=False)
 
-    def forward(self, target_idx, noise_idx, input):
+    def get_score(self, target_idx, noise_idx, input):
         """
         Shape:
             - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
@@ -34,10 +36,6 @@ class IndexLinear(nn.Linear):
 
         # flatten the following matrix
         input = input.view(-1, input.size(-1))
-        if not self.nce:
-            score = super(IndexLinear, self).forward(input) # (N, V)
-            return score
-
         original_size = target_idx.size() # the size will be used to pack the output of indexlinear
         target_idx = target_idx.view(-1)
         noise_idx = noise_idx.view(-1, noise_idx.size(-1))
@@ -47,13 +45,13 @@ class IndexLinear(nn.Linear):
         # the pytorch's [] operator can't BP correctly with redundant indices
         # before version 0.2.0
         input = input.unsqueeze(1)
-        target_batch = self.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
-        bias = self.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
+        target_batch = self.linear.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
+        bias = self.linear.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
         out = torch.baddbmm(1, bias, 1, input, target_batch).view(*original_size, -1)
         target_score, noise_score = out[:, :, 0], out[:, :, 1:]
         return target_score, noise_score
 
-    def reset_parameters(self):
-        init_range = 0.1
-        self.bias.data.fill_(0)
-        self.weight.data.uniform_(-init_range, init_range)
+    def ce_loss(self, target_idx, input):
+        score = self.linear(input) # (N, V)
+        loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
+        return loss

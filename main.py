@@ -46,7 +46,7 @@ corpus = data.Corpus(
 )
 
 eval_batch_size = 1
-################################################################## Build the criterion and model, setup the NCE and index_module
+################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
 ntoken = len(corpus.train.dataset.vocab)
@@ -57,14 +57,14 @@ noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
 )
 if args.index_module == 'linear':
-    index_module = IndexLinear(args.nhid, ntoken)
-    criterion = NCELoss(
-        index_module=index_module,
+    criterion = IndexLinear(
+        args.nhid,
+        ntoken,
         noise=noise,
         noise_ratio=args.noise_ratio,
         norm_term=args.norm_term,
     )
-    criterion.nce_mode(args.nce)
+    criterion.nce = args.nce
     model = RNNModel(
         ntoken, args.emsize, args.nhid, args.nlayers,
         criterion=criterion, dropout=args.dropout,
@@ -73,9 +73,9 @@ if args.index_module == 'linear':
 
 elif args.index_module == 'gru':
     logger.warning('Falling into one layer GRU due to indx_GRU supporting')
-    index_gru = IndexGRU(ntoken, args.nhid, args.nhid, args.dropout)
-    nce_criterion = NCELoss(
-        index_module=index_gru,
+    nce_criterion = IndexGRU(
+        ntoken, args.nhid, args.nhid,
+        args.dropout,
         noise=noise,
         noise_ratio=args.noise_ratio,
         norm_term=args.norm_term,
@@ -107,7 +107,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     # Turn on training mode which enables dropout.
     model.train()
-    model.criterion.nce_mode(args.nce)
+    model.criterion.nce = args.nce
     p_model = nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
@@ -142,9 +142,6 @@ def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
 
-    # GRU does not support ce mode right now
-    if sep_target:
-        model.criterion.disable_nce()
     eval_loss = 0
     total_length = 0
 
@@ -191,7 +188,7 @@ if __name__ == '__main__':
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
         try:
-            for epoch in range(1, args.epochs // 4 + 1):
+            for epoch in range(1, args.epochs + 1):
                 lr, best_val_ppl = run_epoch(epoch, lr, best_val_ppl)
         except KeyboardInterrupt:
             logger.warning('Exiting from training early')
