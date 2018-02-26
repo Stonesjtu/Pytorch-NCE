@@ -19,6 +19,7 @@ from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
 from basis_embedding import BasisEmbedding
+from basis_linear_softmax import IndexBasisLinear
 
 
 parser = setup_parser()
@@ -60,9 +61,11 @@ def setup_model(ntoken, args):
     )
     sep_target = True
     if args.index_module == 'linear':
-        criterion = IndexLinear(
+        criterion = IndexBasisLinear(
             args.nhid,
             ntoken,
+            num_basis=4,
+            num_clusters=800,
             noise=noise,
             noise_ratio=args.noise_ratio,
             norm_term=args.norm_term,
@@ -155,6 +158,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
+    model.criterion.nce = False
 
     eval_loss = 0
     total_length = 0
@@ -200,6 +204,7 @@ if __name__ == '__main__':
     lr = args.lr
     best_val_ppl = None
     basis_aneal_freq = args.epochs // 4
+    model.criterion.bm.basis_mode(False)
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
         try:
@@ -211,6 +216,7 @@ if __name__ == '__main__':
                     target_mode = not encoder.basis
                     logger.warning('Setting basis mode to {}'.format(target_mode))
                     encoder.basis_mode(target_mode)
+                    model.criterion.bm.basis_mode(target_mode)
         except KeyboardInterrupt:
             logger.warning('Exiting from training early')
 

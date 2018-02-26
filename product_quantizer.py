@@ -81,7 +81,7 @@ class ProductQuantizer(nn.Module):
         self.centroid = Parameter(centroid)
         self.register_buffer('codebook', Variable(codebook))
         if data_matrix.is_cuda:
-            self.cuda()
+            self.cuda(0)
 
     def get_centroid(self, index=None):
         """Get the reproduction value for training data
