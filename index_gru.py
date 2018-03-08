@@ -45,9 +45,9 @@ class IndexGRU(NCELoss):
 
     def get_score(self, target_idx, noise_idx, input):
 
-        if not self.nce:
-            #TODO: evaluate Perplexity
-            raise(NotImplementedError('CE evaluation mode for GRU is not implemented yet'))
+        # if not self.nce:
+        #     #TODO: evaluate Perplexity
+        #     raise(NotImplementedError('CE evaluation mode for GRU is not implemented yet'))
 
         input_emb = self.encoder(input) # (B, N, E)
         # The noise for <s> (sentence start) is non-sense
@@ -76,8 +76,8 @@ class IndexGRU(NCELoss):
         Returns:
             - output: the loss for each target_idx
         """
-        target_score = self.forward(target_idx, None, input) - self.norm_term
-        return target_score
+        target_score = self.get_score(target_idx, None, input) - self.norm_term
+        return - target_score
 
 
     def get_target_score(self, noise_idx, rnn_output):
