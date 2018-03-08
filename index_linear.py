@@ -35,7 +35,7 @@ class IndexLinear(NCELoss):
         """
 
         # flatten the following matrix
-        input = input.view(-1, input.size(-1))
+        input = input.contiguous().view(-1, input.size(-1))
         original_size = target_idx.size() # the size will be used to pack the output of indexlinear
         target_idx = target_idx.view(-1)
         noise_idx = noise_idx.view(-1, noise_idx.size(-1))

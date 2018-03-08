@@ -123,9 +123,9 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 
         total_loss += loss.data[0]
 
+        if args.prof:
+            break
         if num_batch % args.log_interval == 0 and num_batch > 0:
-            if args.prof:
-                break
             cur_loss = total_loss / args.log_interval
             ppl = math.exp(cur_loss)
             logger.debug(
@@ -141,6 +141,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
+    model.criterion.nce = False
 
     eval_loss = 0
     total_length = 0
@@ -151,9 +152,11 @@ def evaluate(model, data_source, cuda=args.cuda):
             data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
 
             loss = model(data, target, length)
-            cur_length = length.data.sum()
+            cur_length = int(length.data.sum())
             eval_loss += loss.data[0] * cur_length
             total_length += cur_length
+
+    model.criterion.nce = True
 
     return math.exp(eval_loss/total_length)
 
@@ -191,6 +194,8 @@ if __name__ == '__main__':
         try:
             for epoch in range(1, args.epochs + 1):
                 lr, best_val_ppl = run_epoch(epoch, lr, best_val_ppl)
+                if args.prof:
+                    break
         except KeyboardInterrupt:
             logger.warning('Exiting from training early')
 
