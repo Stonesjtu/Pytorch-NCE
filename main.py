@@ -56,6 +56,10 @@ logger.info('Vocabulary size is {}'.format(ntoken))
 noise = build_unigram_noise(
     torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
 )
+if args.cuda:
+    noise = noise.cuda()
+
+# setting up NCELoss modules
 if args.index_module == 'linear':
     criterion = IndexLinear(
         args.nhid,
