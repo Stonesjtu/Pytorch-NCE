@@ -120,9 +120,9 @@ class NCELoss(nn.Module):
             batch_size,
             max_len,
             self.noise_ratio,
-            ).cuda()
+            )
         else:
-            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).cuda().expand(batch_size, max_len, self.noise_ratio)
+            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
 
         noise_samples = Variable(noise_samples)
         return noise_samples

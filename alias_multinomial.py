@@ -2,25 +2,36 @@ import torch
 import numpy as np
 
 class AliasMethod(object):
-    '''
-        From: https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
+    '''Alias sampling method to speedup multinomial sampling
+
+    The alias method treats multinomial sampling as a combination of uniform sampling and
+    bernoulli sampling. It achieves significant acceleration when repeatedly sampling from
+    the save multinomial distribution.
+
+    Attributes:
+        - probs: the probability density of desired multinomial distribution
+
+    Refs:
+        - https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
     '''
     def __init__(self, probs):
 
+        probs = probs / probs.sum()
+        cpu_probs = probs.cpu()
         K = len(probs)
-        self.prob = torch.zeros(K)
-        self.alias = torch.LongTensor([0]*K)
+        self.prob = [0] * K
+        self.alias = [0] * K
 
         # Sort the data into the outcomes with probabilities
         # that are larger and smaller than 1/K.
         smaller = []
         larger = []
-        for kk, prob in enumerate(probs):
-            self.prob[kk] = K*prob
-            if self.prob[kk] < 1.0:
-                smaller.append(kk)
+        for idx, prob in enumerate(cpu_probs):
+            self.prob[idx] = K*prob
+            if self.prob[idx] < 1.0:
+                smaller.append(idx)
             else:
-                larger.append(kk)
+                larger.append(idx)
 
         # Loop though and create little binary mixtures that
         # appropriately allocate the larger outcomes over the
@@ -40,22 +51,24 @@ class AliasMethod(object):
         for last_one in smaller+larger:
             self.prob[last_one] = 1
 
+        self.prob = probs.new(self.prob)
+        self.alias = probs.new(self.alias).long()
+
     def draw(self, *size):
-        '''
-            Draw N samples from multinomial
-        '''
-        K = self.alias.size(0)
+        """Draw N samples from multinomial
 
+        Args:
+            - size: the output size of samples
+        """
+        max_value = self.alias.size(0)
 
-        prob = self.prob.cuda()
-        alias = self.alias.cuda()
-        kk = torch.LongTensor(np.random.randint(0,K, size=size)).view(-1).cuda()
-        prob = prob[kk]
-        alias = alias[kk]
+        kk = self.alias.new(*size).random_(0, max_value).long().view(-1)
+        prob = self.prob[kk]
+        alias = self.alias[kk]
         # b is whether a random number is greater than q
-        b = torch.bernoulli(prob)
-        oq = kk.mul(b.long())
-        oj = alias.mul((1-b).long())
+        b = torch.bernoulli(prob).long()
+        oq = kk.mul(b)
+        oj = alias.mul(1 - b)
 
         return (oq + oj).view(size)
 
