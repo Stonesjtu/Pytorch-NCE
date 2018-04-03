@@ -5,6 +5,7 @@ import os
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
 
 from vocab import get_vocab
@@ -74,19 +75,26 @@ class Corpus(object):
         self.update_vocab = update_vocab
 
         self.vocab = get_vocab(path, ['train.txt'], min_freq=min_freq)
-        self.train = self.get_dataloader('train.txt')
+        self.train = self.get_dataloader('train.txt', True)
         self.valid = self.get_dataloader('valid.txt')
         self.test = self.get_dataloader('test.txt')
 
-    def get_dataloader(self, filename):
+    def get_dataloader(self, filename, distributed=False):
         full_path = os.path.join(self.base_path, filename)
         dataset = LMDataset(full_path, vocab=self.vocab)
+        if distributed:
+            import torch.distributed as dist
+            # we have rank 1 as parameter server
+            sampler = DistributedSampler(dataset, num_replicas=dist.get_world_size() - 1, rank=dist.get_rank() - 1)
+        else:
+            sampler = None
         return DataLoader(
             dataset=dataset,
             batch_size=self.batch_size,
-            shuffle=self.shuffle,
+            # shuffle=self.shuffle,
             pin_memory=self.pin_memory,
             collate_fn=pad_collate_fn,
+            sampler=sampler,
             # num_workers=1,
             # waiting for a new torch version to support
             # drop_last=True,

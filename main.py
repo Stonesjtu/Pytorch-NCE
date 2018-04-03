@@ -7,17 +7,11 @@ import math
 from tqdm import tqdm
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.autograd as autograd
+from torch import nn, optim, autograd, distributed
 
 import data
 from model import RNNModel
-from nce import NCELoss
-from utils import process_data, build_unigram_noise, setup_parser, setup_logger
-from generic_model import GenModel
-from index_gru import IndexGRU
-from index_linear import IndexLinear
+from utils import process_data, setup_parser, setup_logger
 
 
 parser = setup_parser()
@@ -36,65 +30,24 @@ if torch.cuda.is_available():
 #################################################################
 # Load data
 #################################################################
+distributed.init_process_group(backend='mpi', world_size=0, rank=0)
 corpus = data.Corpus(
     path=args.data,
     vocab_path=args.vocab,
     batch_size=args.batch_size,
-    shuffle=True,
-    pin_memory=args.cuda,
     min_freq=args.min_freq,
 )
 
-eval_batch_size = 1
+ntoken = len(corpus.train.dataset.vocab)
+sep_target = True
 ################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
+model = RNNModel(ntoken=ntoken, ninp=args.emsize, nhid=args.nhid,
+                 nlayers=args.nlayers, dropout=args.dropout)
+
 ntoken = len(corpus.train.dataset.vocab)
 logger.info('Vocabulary size is {}'.format(ntoken))
-
-# noise for soise sampling in NCE
-noise = build_unigram_noise(
-    torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
-)
-if args.cuda:
-    noise = noise.cuda()
-
-# setting up NCELoss modules
-if args.index_module == 'linear':
-    criterion = IndexLinear(
-        args.nhid,
-        ntoken,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
-    )
-    criterion.nce = args.nce
-    model = RNNModel(
-        ntoken, args.emsize, args.nhid, args.nlayers,
-        criterion=criterion, dropout=args.dropout,
-    )
-    sep_target = True
-
-elif args.index_module == 'gru':
-    logger.warning('Falling into one layer GRU due to indx_GRU supporting')
-    nce_criterion = IndexGRU(
-        ntoken, args.nhid, args.nhid,
-        args.dropout,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
-    )
-    model = GenModel(
-        criterion=nce_criterion,
-    )
-    sep_target = False
-
-else:
-    logger.error('The index module [%s] is not supported yet' % args.index_module)
-    raise(NotImplementedError('index module not supported'))
-
-if args.cuda:
-    model.cuda()
 
 logger.info('model definition:\n %s', model)
 #################################################################
@@ -111,18 +64,16 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     # Turn on training mode which enables dropout.
     model.train()
-    model.criterion.nce = args.nce
-    p_model = nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = p_model(data, target, length).mean()
+        loss = model(data, target, length)
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
+        nn.utils.clip_grad_norm(model.parameters(), args.clip)
         optimizer.step()
 
         total_loss += loss.data[0]
@@ -142,25 +93,103 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
             pbar.set_description('Training PPL %.1f' % ppl)
             total_loss = 0
 
+world_size = distributed.get_world_size()
+rank = distributed.get_rank()
+sync_interval = 200
+
+def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
+    optimizer = optim.SGD(
+        params=model.parameters(),
+        lr=lr,
+        momentum=momentum,
+        weight_decay=weight_decay
+    )
+    model = model.cuda()
+
+    def recv_grad(sender_rank):
+        """Recive gradients computed by worker node specified by sender_rank"""
+        counter = 0
+        while True:
+            for p in model.parameters():
+                tensor_buffer = torch.Tensor(p.size())
+                distributed.recv(tensor_buffer, sender_rank)
+                if p.grad is not None:
+                    p.grad.data += tensor_buffer.cuda()
+                else:
+                    p.grad = tensor_buffer.cuda()
+            optimizer.step()
+            optimizer.zero_grad()
+            counter += 1
+            if counter == sync_interval:
+                counter = 0
+                print('syncing parameters')
+                for p in model.parameters():
+                    distributed.isend(p.data.cpu(), sender_rank)
+
+    import threading
+    threads = [threading.Thread(target=recv_grad, args=(i+1,)) for i in range(world_size - 1)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+
+def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
+    model = model.cuda()
+    optimizer = optim.SGD(
+        params=model.parameters(),
+        lr=lr,
+        momentum=momentum,
+        weight_decay=weight_decay
+    )
+    # Turn on training mode which enables dropout.
+    model.train()
+    total_loss = 0
+    if rank == 1:
+        pbar = tqdm(data_source, desc='Training PPL: ....')
+    else:
+        pbar = data_source
+        for num_batch, data_batch in enumerate(pbar):
+            data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
+            loss = model(data, target, length)
+            optimizer.zero_grad()
+            loss.backward()
+
+            # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+            torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
+            for p in model.parameters():
+                # p.grad.data.zero_()
+                distributed.isend(p.grad.data.cpu(), 0)
+                optimizer.step()
+
+            total_loss += loss.data[0]
+            if (num_batch+1) % sync_interval == 0 and num_batch > 0:
+
+                for p in model.parameters():
+                    tensor_buffer = torch.Tensor(p.size())
+                    distributed.recv(tensor_buffer, 0)
+                    p.data.set_(tensor_buffer.cuda())
+
+                if rank == 1:
+                    cur_loss = total_loss / sync_interval #args.log_interval
+                    ppl = math.exp(cur_loss)
+                    pbar.set_description('Training PPL %.1f' % ppl)
+                    total_loss = 0
+
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    model.criterion.nce = False
 
     eval_loss = 0
     total_length = 0
 
-    data_source.batch_size = eval_batch_size
-    with torch.no_grad():
-        for data_batch in data_source:
-            data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
+    for data_batch in data_source:
+        data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
 
-            loss = model(data, target, length)
-            cur_length = int(length.data.sum())
-            eval_loss += loss.data[0] * cur_length
-            total_length += cur_length
-
-    model.criterion.nce = True
+        loss = model(data, target, length)
+        cur_length = int(length.data.sum())
+        eval_loss += loss.data[0] * cur_length
+        total_length += cur_length
 
     return math.exp(eval_loss/total_length)
 
@@ -168,7 +197,12 @@ def evaluate(model, data_source, cuda=args.cuda):
 def run_epoch(epoch, lr, best_val_ppl):
     """A training epoch includes training, evaluation and logging"""
     epoch_start_time = time.time()
-    train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+    print('running on rank', rank)
+    if rank != 0:
+        with torch.cuda.device(rank):
+            worker(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+        return
+    master(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
     val_ppl = evaluate(model, corpus.valid)
     logger.warn(
         '| end of epoch {:3d} | time: {:5.2f}s |'
