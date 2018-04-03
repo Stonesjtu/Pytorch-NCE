@@ -135,20 +135,21 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 
 
 def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    model = model.cuda()
-    optimizer = optim.SGD(
-        params=model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay
-    )
-    # Turn on training mode which enables dropout.
-    model.train()
-    total_loss = 0
-    if rank == 1:
-        pbar = tqdm(data_source, desc='Training PPL: ....')
-    else:
-        pbar = data_source
+    with torch.cuda.device(rank):
+        model = model.cuda()
+        optimizer = optim.SGD(
+            params=model.parameters(),
+            lr=lr,
+            momentum=momentum,
+            weight_decay=weight_decay
+        )
+        # Turn on training mode which enables dropout.
+        model.train()
+        total_loss = 0
+        if rank == 1:
+            pbar = tqdm(data_source, desc='Training PPL: ....')
+        else:
+            pbar = data_source
         for num_batch, data_batch in enumerate(pbar):
             data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
             loss = model(data, target, length)
@@ -197,11 +198,9 @@ def evaluate(model, data_source, cuda=args.cuda):
 def run_epoch(epoch, lr, best_val_ppl):
     """A training epoch includes training, evaluation and logging"""
     epoch_start_time = time.time()
-    print('running on rank', rank)
     if rank != 0:
-        with torch.cuda.device(rank):
-            worker(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
-        return
+        worker(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+        return lr, best_val_ppl
     master(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
     val_ppl = evaluate(model, corpus.valid)
     logger.warn(
