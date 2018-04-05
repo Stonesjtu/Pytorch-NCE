@@ -122,9 +122,8 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
             counter += 1
             if counter == sync_interval:
                 counter = 0
-                print('syncing parameters')
                 for p in model.parameters():
-                    distributed.isend(p.data.cpu(), sender_rank)
+                    distributed.send(p.data.cpu(), sender_rank)
 
     import threading
     threads = [threading.Thread(target=recv_grad, args=(i+1,)) for i in range(world_size - 1)]
@@ -160,8 +159,8 @@ def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
             for p in model.parameters():
                 # p.grad.data.zero_()
-                distributed.isend(p.grad.data.cpu(), 0)
-                optimizer.step()
+                distributed.send(p.grad.data.cpu(), 0)
+            optimizer.step()
 
             total_loss += loss.data[0]
             if (num_batch+1) % sync_interval == 0 and num_batch > 0:
