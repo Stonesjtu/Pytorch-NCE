@@ -95,7 +95,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 
 world_size = distributed.get_world_size()
 rank = distributed.get_rank()
-sync_interval = 200
+sync_interval = 20
 
 def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
@@ -111,19 +111,19 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         counter = 0
         while True:
             for p in model.parameters():
-                tensor_buffer = torch.Tensor(p.size())
+                tensor_buffer = p.new(p.size())
                 distributed.recv(tensor_buffer, sender_rank)
                 if p.grad is not None:
-                    p.grad.data += tensor_buffer.cuda()
+                    p.grad.data += tensor_buffer
                 else:
-                    p.grad = tensor_buffer.cuda()
+                    p.grad = tensor_buffer
             optimizer.step()
             optimizer.zero_grad()
             counter += 1
             if counter == sync_interval:
                 counter = 0
                 for p in model.parameters():
-                    distributed.send(p.data.cpu(), sender_rank)
+                    distributed.send(p.data, sender_rank)
 
     import threading
     threads = [threading.Thread(target=recv_grad, args=(i+1,)) for i in range(world_size - 1)]
@@ -159,16 +159,16 @@ def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
             for p in model.parameters():
                 # p.grad.data.zero_()
-                distributed.send(p.grad.data.cpu(), 0)
+                distributed.send(p.grad.data, 0)
             optimizer.step()
 
             total_loss += loss.data[0]
             if (num_batch+1) % sync_interval == 0 and num_batch > 0:
 
                 for p in model.parameters():
-                    tensor_buffer = torch.Tensor(p.size())
+                    tensor_buffer = p.new(p.size())
                     distributed.recv(tensor_buffer, 0)
-                    p.data.set_(tensor_buffer.cuda())
+                    p.data.set_(tensor_buffer)
 
                 if rank == 1:
                     cur_loss = total_loss / sync_interval #args.log_interval
