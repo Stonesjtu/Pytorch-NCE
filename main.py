@@ -55,47 +55,9 @@ logger.info('model definition:\n %s', model)
 #################################################################
 
 
-def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    optimizer = optim.SGD(
-        params=model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay
-    )
-    # Turn on training mode which enables dropout.
-    model.train()
-    total_loss = 0
-    pbar = tqdm(data_source, desc='Training PPL: ....')
-    for num_batch, data_batch in enumerate(pbar):
-        optimizer.zero_grad()
-        data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = model(data, target, length)
-        loss.backward()
-
-        # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
-        nn.utils.clip_grad_norm(model.parameters(), args.clip)
-        optimizer.step()
-
-        total_loss += loss.data[0]
-
-        if args.prof:
-            break
-        if num_batch % args.log_interval == 0 and num_batch > 0:
-            cur_loss = total_loss / args.log_interval
-            ppl = math.exp(cur_loss)
-            logger.debug(
-                '| epoch {:3d} | {:5d}/{:5d} batches '
-                '| lr {:02.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
-                    epoch, num_batch, len(corpus.train),
-                    lr, cur_loss, ppl
-                  )
-            )
-            pbar.set_description('Training PPL %.1f' % ppl)
-            total_loss = 0
-
 world_size = distributed.get_world_size()
 rank = distributed.get_rank()
-sync_interval = 20
+sync_interval = 300
 
 def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
@@ -110,13 +72,14 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         """Recive gradients computed by worker node specified by sender_rank"""
         counter = 0
         while True:
-            for p in model.parameters():
+            for name, p in model.named_parameters():
                 tensor_buffer = p.new(p.size())
                 distributed.recv(tensor_buffer, sender_rank)
                 if p.grad is not None:
                     p.grad.data += tensor_buffer
                 else:
                     p.grad = tensor_buffer
+            print('received: ', sender_rank)
             optimizer.step()
             optimizer.zero_grad()
             counter += 1
@@ -134,6 +97,7 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 
 
 def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
+    import time
     with torch.cuda.device(rank):
         model = model.cuda()
         optimizer = optim.SGD(
@@ -149,29 +113,43 @@ def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
             pbar = tqdm(data_source, desc='Training PPL: ....')
         else:
             pbar = data_source
+
         for num_batch, data_batch in enumerate(pbar):
             data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
+            start = time.time()
             loss = model(data, target, length)
             optimizer.zero_grad()
             loss.backward()
+            #torch.cuda.synchronize()
+            print('FP&BP: ', time.time() - start)
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
-            for p in model.parameters():
+
+            start = time.time()
+            for name, p in model.named_parameters():
                 # p.grad.data.zero_()
                 distributed.send(p.grad.data, 0)
+                continue
+                event = distributed.isend(p.grad.data, 0)
+                p.register_hook(lambda _unused: event.wait())
+                #events.append(event)
+            print('sent: ', rank)
+            print(time.time() - start)
+
             optimizer.step()
 
             total_loss += loss.data[0]
             if (num_batch+1) % sync_interval == 0 and num_batch > 0:
 
+                print('syncing')
                 for p in model.parameters():
                     tensor_buffer = p.new(p.size())
                     distributed.recv(tensor_buffer, 0)
                     p.data.set_(tensor_buffer)
 
                 if rank == 1:
-                    cur_loss = total_loss / sync_interval #args.log_interval
+                    cur_loss = total_loss / sync_interval  #args.log_interval
                     ppl = math.exp(cur_loss)
                     pbar.set_description('Training PPL %.1f' % ppl)
                     total_loss = 0
