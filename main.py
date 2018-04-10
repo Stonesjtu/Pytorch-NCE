@@ -57,7 +57,7 @@ logger.info('model definition:\n %s', model)
 
 world_size = distributed.get_world_size()
 rank = distributed.get_rank()
-sync_interval = 300
+sync_interval = 100
 
 def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
@@ -69,17 +69,17 @@ def master(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     model = model.cuda()
 
     def recv_grad(sender_rank):
-        """Recive gradients computed by worker node specified by sender_rank"""
+        """Receive gradients computed by worker node specified by sender_rank"""
         counter = 0
         while True:
+            events = []
             for name, p in model.named_parameters():
                 tensor_buffer = p.new(p.size())
                 distributed.recv(tensor_buffer, sender_rank)
-                if p.grad is not None:
-                    p.grad.data += tensor_buffer
-                else:
+                if p.grad is None:
                     p.grad = tensor_buffer
-            print('received: ', sender_rank)
+                else:
+                    p.grad.data.add_(tensor_buffer.data)
             optimizer.step()
             optimizer.zero_grad()
             counter += 1
@@ -114,35 +114,28 @@ def worker(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         else:
             pbar = data_source
 
+        events = []
         for num_batch, data_batch in enumerate(pbar):
             data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-            start = time.time()
             loss = model(data, target, length)
+            for e in events:
+                e.wait()
+            events = []
             optimizer.zero_grad()
             loss.backward()
-            #torch.cuda.synchronize()
-            print('FP&BP: ', time.time() - start)
 
             # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
             torch.nn.utils.clip_grad_norm(model.parameters(), args.clip)
 
-            start = time.time()
             for name, p in model.named_parameters():
                 # p.grad.data.zero_()
-                distributed.send(p.grad.data, 0)
-                continue
-                event = distributed.isend(p.grad.data, 0)
-                p.register_hook(lambda _unused: event.wait())
-                #events.append(event)
-            print('sent: ', rank)
-            print(time.time() - start)
+                events.append(distributed.isend(p.grad.data, 0))
 
             optimizer.step()
 
             total_loss += loss.data[0]
             if (num_batch+1) % sync_interval == 0 and num_batch > 0:
 
-                print('syncing')
                 for p in model.parameters():
                     tensor_buffer = p.new(p.size())
                     distributed.recv(tensor_buffer, 0)
