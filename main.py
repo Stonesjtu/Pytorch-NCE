@@ -45,7 +45,6 @@ corpus = data.Corpus(
     min_freq=args.min_freq,
 )
 
-eval_batch_size = 1
 ################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
@@ -112,13 +111,12 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     # Turn on training mode which enables dropout.
     model.train()
     model.criterion.nce = args.nce
-    p_model = nn.DataParallel(model, device_ids=range(torch.cuda.device_count()))
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = p_model(data, target, length).mean()
+        loss = model(data, target, length)
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -150,7 +148,6 @@ def evaluate(model, data_source, cuda=args.cuda):
     eval_loss = 0
     total_length = 0
 
-    data_source.batch_size = eval_batch_size
     with torch.no_grad():
         for data_batch in data_source:
             data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
