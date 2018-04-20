@@ -68,6 +68,7 @@ class NCELoss(nn.Module):
         self.size_average = size_average
         self.reduce = reduce
         self.per_word = per_word
+        self.per_word = False
         self.nce = nce
 
     def forward(self, target, *args, **kwargs):
@@ -87,7 +88,7 @@ class NCELoss(nn.Module):
             # B,N,Nr
             prob_noise = Variable(
                 self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
-            )
+            ).expand(batch, max_len, self.noise_ratio)
             prob_target_in_noise = Variable(
                 self.noise[target.data.view(-1)].view_as(target)
             )
@@ -122,7 +123,7 @@ class NCELoss(nn.Module):
                 self.noise_ratio,
             )
         else:
-            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
+            noise_samples = self.alias.draw(1, 1, self.noise_ratio)
 
         noise_samples = Variable(noise_samples)
         return noise_samples
