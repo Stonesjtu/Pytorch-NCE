@@ -55,7 +55,7 @@ class IndexLinear(NCELoss):
 
         # the pytorch's [] operator can't BP correctly with redundant indices
         # before version 0.2.0
-        #target_batch = transfer(self.weight.index_select(0, target_idx.cpu()), 0)  # N X H
+        # target_batch = transfer(self.weight.index_select(0, target_idx.cpu()), 0)  # N X H
         target_batch = target_batch.view(-1, target_batch.size(-1))
         target_bias = self.bias.index_select(0, target_idx)  # N
         target_score = torch.matmul(target_batch.unsqueeze(1), input.unsqueeze(2)).squeeze() + target_bias  # N X 1 X H * N X H X 1
@@ -66,8 +66,7 @@ class IndexLinear(NCELoss):
         return target_score.view(original_size), noise_score.view(*original_size, -1)
 
     def ce_loss(self, target_idx, input, target_batch):
-        if self.gpu_weight is None:
-            self.gpu_weight = self.weight.cuda()
+        self.gpu_weight = self.weight.cuda()
         score = F.linear(input, self.gpu_weight, self.bias) # (N, V)
         loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
         return loss

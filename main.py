@@ -74,7 +74,6 @@ if args.index_module == 'linear':
         ntoken, args.emsize, args.nhid, args.nlayers,
         criterion=criterion, dropout=args.dropout,
     )
-    sep_target = True
 
 elif args.index_module == 'gru':
     logger.warning('Falling into one layer GRU due to indx_GRU supporting')
@@ -88,7 +87,6 @@ elif args.index_module == 'gru':
     model = GenModel(
         criterion=nce_criterion,
     )
-    sep_target = False
 
 else:
     logger.error('The index module [%s] is not supported yet' % args.index_module)
@@ -102,6 +100,15 @@ logger.info('model definition:\n %s', model)
 # Training code
 #################################################################
 
+def sparse_update(param, lr):
+    """Update the parameter via sparse gradient
+
+    This helper function is a work-around of current expensive spcadd
+
+    """
+    grad = param.grad.data
+    param.data.index_add_(0, grad._indices(), (-lr) * grad._values())
+    param.grad.data.zero_()
 
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
@@ -114,11 +121,6 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     # Turn on training mode which enables dropout.
     model.encoder = model.encoder.cpu()
     model.criterion.weight = model.encoder.weight  # test tying weight
-    emb = model.encoder.weight
-    emb_optimizer = optim.SGD(
-        params=[emb],
-        lr=lr,
-    )
     # model.encoder.weight = torch.nn.Parameter(model.encoder.weight.pin_memory())
     model.train()
     model.criterion.nce = args.nce
@@ -126,9 +128,8 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
-        emb_optimizer.zero_grad()
-        data, target, length = process_data(data_batch, cuda=False, sep_target=sep_target)
-        loss = model(data, target.cuda(), length.cuda())
+        data, target, length = process_data(data_batch, cuda=False, sep_target=False)
+        loss = model(data, length.cuda())
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
             loss.backward()
         #print(p)
@@ -136,7 +137,6 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
-        emb_optimizer.step()
 
 
         total_loss += loss.item()
@@ -166,9 +166,9 @@ def evaluate(model, data_source, cuda=args.cuda):
 
     with torch.no_grad():
         for data_batch in data_source:
-            data, target, length = process_data(data_batch, cuda=False, sep_target=sep_target)
+            data, target, length = process_data(data_batch, cuda=False, sep_target=False)
 
-            loss = model(data, target.cuda(), length.cuda())
+            loss = model(data, length.cuda())
             cur_length = int(length.data.sum())
             eval_loss += loss.item() * cur_length
             total_length += cur_length
