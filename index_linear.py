@@ -2,6 +2,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from nce import NCELoss
 
@@ -25,7 +26,8 @@ class IndexLinear(NCELoss):
 
     def __init__(self, input_size, output_size, *args, **kwargs):
         super(IndexLinear, self).__init__(*args, **kwargs)
-        self.linear = nn.Linear(input_size, output_size)
+        self.weight = nn.Parameter(torch.Tensor(output_size, input_size))
+        self.bias = nn.Parameter(torch.Tensor(output_size))
         self.ce = nn.CrossEntropyLoss(reduce=False)
 
     def get_score(self, target_idx, noise_idx, input):
@@ -45,13 +47,13 @@ class IndexLinear(NCELoss):
         # the pytorch's [] operator can't BP correctly with redundant indices
         # before version 0.2.0
         input = input.unsqueeze(1)
-        target_batch = self.linear.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
-        bias = self.linear.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
+        target_batch = self.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
+        bias = self.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
         out = torch.baddbmm(1, bias, 1, input, target_batch).view(*original_size, -1)
         target_score, noise_score = out[:, :, 0], out[:, :, 1:]
         return target_score, noise_score
 
     def ce_loss(self, target_idx, input):
-        score = self.linear(input) # (N, V)
+        score = F.linear(input, self.weight, self.bias) # (N, V)
         loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
         return loss
