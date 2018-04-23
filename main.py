@@ -107,19 +107,23 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
         params=model.parameters(),
         lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay
+        #momentum=momentum,
+        #weight_decay=weight_decay,
     )
     # Turn on training mode which enables dropout.
+    model.encoder = model.encoder.cpu()
+    # model.encoder.weight = torch.nn.Parameter(model.encoder.weight.pin_memory())
     model.train()
     model.criterion.nce = args.nce
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
-        data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = model(data, target, length)
-        loss.backward()
+        data, target, length = process_data(data_batch, cuda=False, sep_target=sep_target)
+        loss = model(data, target.cuda(), length.cuda())
+        with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
+            loss.backward()
+        print(p)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -152,9 +156,9 @@ def evaluate(model, data_source, cuda=args.cuda):
 
     with torch.no_grad():
         for data_batch in data_source:
-            data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
+            data, target, length = process_data(data_batch, cuda=False, sep_target=sep_target)
 
-            loss = model(data, target, length)
+            loss = model(data, target.cuda(), length.cuda())
             cur_length = int(length.data.sum())
             eval_loss += loss.item() * cur_length
             total_length += cur_length
@@ -168,6 +172,8 @@ def run_epoch(epoch, lr, best_val_ppl):
     """A training epoch includes training, evaluation and logging"""
     epoch_start_time = time.time()
     train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+    if args.prof:
+        return
     val_ppl = evaluate(model, corpus.valid)
     logger.warn(
         '| end of epoch {:3d} | time: {:5.2f}s |'
@@ -207,7 +213,8 @@ if __name__ == '__main__':
         with open(args.save, 'rb') as f:
             model = torch.load(f)
 
-    # Run on test data.
-    test_ppl = evaluate(model, corpus.test)
-    logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
-    sys.stdout.flush()
+    if not args.prof:
+        # Run on test data.
+        test_ppl = evaluate(model, corpus.test)
+        logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
+        sys.stdout.flush()

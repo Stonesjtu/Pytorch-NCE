@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from utils import get_mask
+from transfer import transfer
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a criterion (decoder and loss function)."""
@@ -10,7 +11,7 @@ class RNNModel(nn.Module):
     def __init__(self, ntoken, ninp, nhid, nlayers, criterion, dropout=0.5):
         super(RNNModel, self).__init__()
         self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp)
+        self.encoder = nn.Embedding(ntoken, ninp, sparse=False)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
 
         self.nhid = nhid
@@ -25,7 +26,8 @@ class RNNModel(nn.Module):
 
     def _rnn(self, input):
         '''Serves as the encoder and recurrent layer'''
-        emb = self.drop(self.encoder(input))
+        emb_gpu = transfer(self.encoder(input), 0)
+        emb = self.drop(emb_gpu)
         output, unused_hidden = self.rnn(emb)
         output = self.drop(output)
         return output
