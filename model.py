@@ -24,20 +24,22 @@ class RNNModel(nn.Module):
         init_range = 0.1
         self.encoder.weight.data.uniform_(-init_range, init_range)
 
-    def _rnn(self, input):
+    def _rnn(self, input_emb):
         '''Serves as the encoder and recurrent layer'''
-        self.emb_gpu = transfer(self.encoder(input), 0)
-        emb = self.drop(self.emb_gpu)
+        emb = self.drop(input_emb)
         output, unused_hidden = self.rnn(emb)
         output = self.drop(output)
         return output
 
 
-    def forward(self, input, target, length):
+    def forward(self, sentences, length):
 
-        mask = get_mask(length.data, max_len=input.size(1))
-        rnn_output = self._rnn(input)
-        loss = self.criterion(target, rnn_output, self.emb_gpu)
+        emb_gpu = transfer(self.encoder(sentences), 0)
+        mask = get_mask(length.data, max_len=sentences.size(1) - 1)
+        input_emb = emb_gpu[:, :-1].contiguous()
+        target_emb = emb_gpu[:, 1:].contiguous()
+        rnn_output = self._rnn(input_emb)
+        loss = self.criterion(sentences[:, 1:].contiguous().cuda(), rnn_output, target_emb)
         loss = torch.masked_select(loss, mask)
 
         return loss.mean()
