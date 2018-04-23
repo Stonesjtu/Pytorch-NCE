@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from utils import get_mask
-from transfer import transfer
+from transfer import transfer, tranfer_embedding
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a criterion (decoder and loss function)."""
@@ -32,9 +32,9 @@ class RNNModel(nn.Module):
         return output
 
 
-    def forward(self, sentences, length):
+    def forward(self, sentences, length, lr=1):
 
-        emb_gpu = transfer(self.encoder(sentences), 0)
+        emb_gpu = transfer(tranfer_embedding(self.encoder.weight, sentences, lr), 0)
         mask = get_mask(length.data, max_len=sentences.size(1) - 1)
         input_emb = emb_gpu[:, :-1].contiguous()
         target_emb = emb_gpu[:, 1:].contiguous()
