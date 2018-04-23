@@ -105,14 +105,20 @@ logger.info('model definition:\n %s', model)
 
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
-        params=model.parameters(),
+        params=model.rnn.parameters(),
         lr=lr,
-        #momentum=momentum,
-        #weight_decay=weight_decay,
+        momentum=momentum,
+        weight_decay=weight_decay,
     )
+    optimizer.add_param_group({'params': model.criterion.bias})
     # Turn on training mode which enables dropout.
     model.encoder = model.encoder.cpu()
     model.criterion.weight = model.encoder.weight  # test tying weight
+    emb = model.encoder.weight
+    emb_optimizer = optim.SGD(
+        params=[emb],
+        lr=lr,
+    )
     # model.encoder.weight = torch.nn.Parameter(model.encoder.weight.pin_memory())
     model.train()
     model.criterion.nce = args.nce
@@ -120,6 +126,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
+        emb_optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=False, sep_target=sep_target)
         loss = model(data, target.cuda(), length.cuda())
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
@@ -129,6 +136,8 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
+        emb_optimizer.step()
+
 
         total_loss += loss.item()
 
