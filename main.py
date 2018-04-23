@@ -112,6 +112,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     # Turn on training mode which enables dropout.
     model.encoder = model.encoder.cpu()
+    model.criterion.weight = model.encoder.weight  # test tying weight
     # model.encoder.weight = torch.nn.Parameter(model.encoder.weight.pin_memory())
     model.train()
     model.criterion.nce = args.nce
@@ -123,7 +124,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         loss = model(data, target.cuda(), length.cuda())
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
             loss.backward()
-        print(p)
+        #print(p)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
