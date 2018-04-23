@@ -11,7 +11,7 @@ class RNNModel(nn.Module):
     def __init__(self, ntoken, ninp, nhid, nlayers, criterion, dropout=0.5):
         super(RNNModel, self).__init__()
         self.drop = nn.Dropout(dropout)
-        self.encoder = nn.Embedding(ntoken, ninp, sparse=False)
+        self.encoder = nn.Embedding(ntoken, ninp, sparse=True)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
 
         self.nhid = nhid
@@ -26,8 +26,8 @@ class RNNModel(nn.Module):
 
     def _rnn(self, input):
         '''Serves as the encoder and recurrent layer'''
-        emb_gpu = transfer(self.encoder(input), 0)
-        emb = self.drop(emb_gpu)
+        self.emb_gpu = transfer(self.encoder(input), 0)
+        emb = self.drop(self.emb_gpu)
         output, unused_hidden = self.rnn(emb)
         output = self.drop(output)
         return output
@@ -37,7 +37,7 @@ class RNNModel(nn.Module):
 
         mask = get_mask(length.data, max_len=input.size(1))
         rnn_output = self._rnn(input)
-        loss = self.criterion(target, rnn_output)
+        loss = self.criterion(target, rnn_output, self.emb_gpu)
         loss = torch.masked_select(loss, mask)
 
         return loss.mean()
