@@ -40,3 +40,22 @@ class Transfer(Function):
         return (grad_input, None)
 
 transfer = Transfer.apply
+
+
+class TransferEmbedding(Function):
+    """An embedding module to workaround slow spcadd of pytorch"""
+
+    @staticmethod
+    def forward(ctx, weight, idx, lr=1):
+        ctx.idx = idx.view(-1)
+        ctx.lr = lr
+        ctx.weight = weight
+        weight.requires_grad = False
+        return weight[ctx.idx].view(*idx.size(), -1)
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        ctx.weight.index_add_(0, ctx.idx, (-ctx.lr) * grad_output.view(-1, grad_output.size(-1)))
+        return (None, None, None)
+
+tranfer_embedding = TransferEmbedding.apply

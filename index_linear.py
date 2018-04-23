@@ -66,7 +66,16 @@ class IndexLinear(NCELoss):
         return target_score.view(original_size), noise_score.view(*original_size, -1)
 
     def ce_loss(self, target_idx, input, target_batch):
-        self.gpu_weight = self.weight.cuda()
+        if self.gpu_weight is None:
+            self.gpu_weight = self.weight.cuda()
         score = F.linear(input, self.gpu_weight, self.bias) # (N, V)
         loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
         return loss
+
+    def eval(self, *args):
+        super(IndexLinear, self).eval(*args)
+        self.gpu_weight = self.weight.cuda()
+
+    def train(self, *args):
+        super(IndexLinear, self).train(*args)
+        self.gpu_weight = None
