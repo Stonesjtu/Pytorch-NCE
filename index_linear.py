@@ -1,4 +1,5 @@
 """An index linear class for generic NCE module"""
+import math
 
 import torch
 import torch.nn as nn
@@ -29,6 +30,13 @@ class IndexLinear(NCELoss):
         self.weight = nn.Parameter(torch.Tensor(output_size, input_size))
         self.bias = nn.Parameter(torch.Tensor(output_size))
         self.ce = nn.CrossEntropyLoss(reduce=False)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.weight.size(1))
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
 
     def get_score(self, target_idx, noise_idx, input):
         """
