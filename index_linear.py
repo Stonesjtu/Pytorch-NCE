@@ -60,22 +60,21 @@ class IndexLinear(NCELoss):
         target_bias = self.bias.index_select(0, target_idx)  # N
         target_score = torch.matmul(target_batch.unsqueeze(1), input.unsqueeze(2)).squeeze() + target_bias  # N X 1 X H * N X H X 1
 
-        noise_batch = transfer(self.weight.index_select(0, noise_idx.cpu()), 0)  # Nr X H
+        noise_batch = transfer(self.emb(noise_idx.cpu()), 0)  # Nr X H
         noise_bias = self.bias.index_select(0, noise_idx)  # Nr
         noise_score = torch.matmul(input, noise_batch.t()) + noise_bias.unsqueeze(0)  # N X Nr
         return target_score.view(original_size), noise_score.view(*original_size, -1)
 
     def ce_loss(self, target_idx, input, target_batch):
-        if self.gpu_weight is None:
-            self.gpu_weight = self.weight.cuda()
         score = F.linear(input, self.gpu_weight, self.bias) # (N, V)
         loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
         return loss
 
     def eval(self, *args):
         super(IndexLinear, self).eval(*args)
-        self.gpu_weight = self.weight.cuda()
 
-    def train(self, *args):
-        super(IndexLinear, self).train(*args)
-        self.gpu_weight = None
+    def train(self, value):
+        if value:
+            self.gpu_weight = None
+        else:
+            self.gpu_weight = self.emb.weight.cuda()

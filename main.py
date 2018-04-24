@@ -110,6 +110,8 @@ def sparse_update(param, lr):
     param.data.index_add_(0, grad._indices(), (-lr) * grad._values())
     param.grad.data.zero_()
 
+model.encoder = model.encoder.cpu()
+model.criterion.emb = model.encoder  # test tying weight
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
         params=model.rnn.parameters(),
@@ -119,8 +121,6 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     optimizer.add_param_group({'params': model.criterion.bias})
     # Turn on training mode which enables dropout.
-    model.encoder = model.encoder.cpu()
-    model.criterion.weight = model.encoder.weight  # test tying weight
     # model.encoder.weight = torch.nn.Parameter(model.encoder.weight.pin_memory())
     model.train()
     model.criterion.nce = args.nce
@@ -128,6 +128,8 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
         optimizer.zero_grad()
+        if model.encoder.weight.grad is not None:
+            model.encoder.weight.grad.zero_()
         data, target, length = process_data(data_batch, cuda=False, sep_target=False)
         loss = model(data, length.cuda(), lr)
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
@@ -137,6 +139,11 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
+        emb_grad = model.encoder.weight.grad
+        w_d = weight_decay * model.encoder.weight.data[emb_grad._indices().view(-1)]
+        emb_grad._values().add_(w_d)
+        model.encoder.weight.data.add_(-lr * emb_grad)
+        #print(model.encoder.weight.grad)
 
 
         total_loss += loss.item()
