@@ -39,7 +39,7 @@ class RNNModel(nn.Module):
         input_emb = emb_gpu[:, :-1].contiguous()
         target_emb = emb_gpu[:, 1:].contiguous()
         rnn_output = self._rnn(input_emb)
-        loss = self.criterion(sentences[:, 1:].contiguous().cuda(), rnn_output, target_emb)
+        loss = self.criterion(sentences[:, 1:].cuda(), rnn_output, target_emb)
         loss = torch.masked_select(loss, mask)
 
         return loss.mean()

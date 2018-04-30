@@ -112,6 +112,7 @@ def sparse_update(param, lr):
 
 model.encoder = model.encoder.cpu()
 model.criterion.emb = model.encoder  # test tying weight
+
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
         params=model.rnn.parameters(),
@@ -134,16 +135,18 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
         loss = model(data, length.cuda(), lr)
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
             loss.backward()
-        #print(p)
+        if args.prof:
+            print(p)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
-        emb_grad = model.encoder.weight.grad
-        w_d = weight_decay * model.encoder.weight.data[emb_grad._indices().view(-1)]
+        emb_grad = model.encoder.weight.grad.coalesce()
+        indices = emb_grad._indices().view(-1)
+        w_d = weight_decay * model.encoder.weight.data[indices]
         emb_grad._values().add_(w_d)
-        model.encoder.weight.data.add_(-lr * emb_grad)
-        #print(model.encoder.weight.grad)
+        # model.encoder.weight.data.add_(-lr * emb_grad)
+        model.encoder.weight.data.index_add_(0, indices, -lr * emb_grad._values())
 
 
         total_loss += loss.item()
