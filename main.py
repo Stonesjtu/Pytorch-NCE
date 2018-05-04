@@ -100,16 +100,6 @@ logger.info('model definition:\n %s', model)
 # Training code
 #################################################################
 
-def sparse_update(param, lr):
-    """Update the parameter via sparse gradient
-
-    This helper function is a work-around of current expensive spcadd
-
-    """
-    grad = param.grad.data
-    param.data.index_add_(0, grad._indices(), (-lr) * grad._values())
-    param.grad.data.zero_()
-
 model.encoder = model.encoder.cpu()
 model.criterion.emb = model.encoder  # test tying weight
 
