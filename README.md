@@ -13,8 +13,10 @@ NCE bridges the gap between generative models and discriminative models, rather 
 the softmax layer. With NCE, you can turn almost anything into posterior with less effort (I think).
 
 Refs:
+
 NCE:
 > http://www.cs.helsinki.fi/u/ahyvarin/papers/Gutmann10AISTATS.pdf
+
 NCE on rnnlm:
 > https://pdfs.semanticscholar.org/144e/357b1339c27cce7a1e69f0899c21d8140c1f.pdf
 
@@ -22,9 +24,11 @@ NCE on rnnlm:
 
 A review of softmax speedup methods:
 > http://ruder.io/word-embeddings-softmax/
+
 NCE vs. IS (Importance Sampling): Nce is a binary classification while IS is sort of multi-class
 classification problem.
 > http://demo.clab.cs.cmu.edu/cdyer/nce_notes.pdf
+
 NCE vs. GAN (Generative Adversarial Network):
 > https://arxiv.org/abs/1412.6515
 
@@ -44,6 +48,7 @@ By constructing data structures, alias method can reduce the sampling complexity
 and it's easy to parallelize.
 
 Refs:
+
 alias method:
 > https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
 
@@ -58,6 +63,7 @@ In this code base, I use a variant of generic NCE named full-NCE (f-NCE) to clar
 f-NCE samples the noises at input embedding.
 
 Refs:
+
 whole sentence language model by IBM (ICASSP2018)
 
 Bi-LSTM language model by speechlab,SJTU (ICSLP2016?)
@@ -73,8 +79,10 @@ A more aggressive approach is to called self contrasting (named by myself). Inst
 distribution, the noises are simply the other training tokens the within the same mini-batch.
 
 Ref:
+
 batched NCE
 > https://arxiv.org/pdf/1708.05997.pdf
+
 self contrasting:
 > https://www.isi.edu/natural-language/mt/simple-fast-noise.pdf
 
