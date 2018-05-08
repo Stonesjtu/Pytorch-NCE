@@ -44,6 +44,8 @@ Since the unigram distribution can be obtained before training and remains uncha
 some works are proposed to make use of this property to speedup the sampling procedure. Alias method is
 one of them.
 
+<img src="https://github.com/Stonesjtu/Pytorch-NCE/blob/master/res/alias.gif?raw=true" alt="diagram of constructing auxiliary data structure" height="200" />
+
 By constructing data structures, alias method can reduce the sampling complexity from $O(log(N))$ to $O(1)$,
 and it's easy to parallelize.
 
