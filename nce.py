@@ -117,9 +117,9 @@ class NCELoss(nn.Module):
 
         if self.per_word:
             noise_samples = self.alias.draw(
-            batch_size,
-            max_len,
-            self.noise_ratio,
+                batch_size,
+                max_len,
+                self.noise_ratio,
             )
         else:
             noise_samples = self.alias.draw(1, max_len, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
