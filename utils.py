@@ -84,13 +84,16 @@ def setup_logger(logger_name):
 
 # Get the mask matrix of a batched input
 def get_mask(lengths, cut_tail=0, max_len=None):
+    """
+    Creates a boolean mask from sequence lengths.
+    """
     assert lengths.min() >= cut_tail
-    if max_len is None:
-        max_len = lengths.max()
-    size = len(lengths)
-    mask = lengths.new().byte().resize_(size, max_len).zero_()
-    for i in range(size):
-        mask[i][:lengths[i]-cut_tail].fill_(1)
+    batch_size = lengths.numel()
+    max_len = max_len or lengths.max()
+    mask = (torch.arange(0, max_len)
+            .type_as(lengths)
+            .repeat(batch_size, 1)
+            .lt(lengths.unsqueeze(1)))
     return Variable(mask)
 
 
