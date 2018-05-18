@@ -43,6 +43,8 @@ corpus = data.Corpus(
     shuffle=True,
     pin_memory=args.cuda,
     min_freq=args.min_freq,
+    concat=args.concat,
+    bptt=args.bptt,
 )
 
 ################################################################## Build the criterion and model, setup the NCE module

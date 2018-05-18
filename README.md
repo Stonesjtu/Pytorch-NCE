@@ -173,4 +173,6 @@ optional arguments:
   --cuda             use CUDA
   --log-interval N   report interval
   --save SAVE        path to save the final model
+  --bptt             max length of truncated bptt
+  --concat           use concatenated sentence instead of individual sentence
 ```

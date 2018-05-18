@@ -23,6 +23,10 @@ def setup_parser():
                         help='number of layers')
     parser.add_argument('--lr', type=float, default=1.0,
                         help='initial learning rate')
+    parser.add_argument('--bptt', type=int, default=35,
+                        help='truncated bptt length')
+    parser.add_argument('--concat', action='store_true',
+                        help='Use concatenated sentences chunked into length of bptt')
     parser.add_argument('--weight-decay', type=float, default=1e-5,
                         help='initial weight decay')
     parser.add_argument('--lr-decay', type=float, default=2,
