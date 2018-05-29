@@ -12,3 +12,4 @@ profiler_out/*
 basis?/
 runs/
 *.lprof
+*epoch*
