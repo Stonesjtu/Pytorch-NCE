@@ -30,7 +30,7 @@ class LMDataset(Dataset):
     """dataset that zero-pads all sentence into same length
 
     Attributes:
-        - vocab_path: dictionary file, one word each line
+        - vocab: Vocab object which holds the vocabulary info
         - file_path: the directory of all train, test and valid corpus
         - bptt: truncated BPTT length, items after such length will be
         ignored
@@ -53,13 +53,13 @@ class LMDataset(Dataset):
         with open(path, 'r') as f:
             sentences = []
             for sentence in tqdm(f, desc='Processing file: {}'.format(path)):
-                sentences.append(sentence)
+                sentences.append(sentence.split())
         self.data = sentences
 
     def __getitem__(self, index):
         raw_sentence = self.data[index]
         # truncate the sequence length to maximum of BPTT
-        sentence = ['<s>'] + raw_sentence.split()[:self.bptt] + ['</s>']
+        sentence = ['<s>'] + raw_sentence[:self.bptt] + ['</s>']
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
@@ -72,7 +72,7 @@ class ContLMDataset(LMDataset):
     Each training sample is a chunked version and of same length.
 
     Attributes:
-        - vocab_path: dictionary file, one word each line
+        - vocab: Vocab object which holds the vocabulary info
         - file_path: the directory of all train, test and valid corpus
         - bptt: sequence length
     """
@@ -80,15 +80,14 @@ class ContLMDataset(LMDataset):
     def tokenize(self, path):
         """Tokenizes a text file."""
         assert os.path.exists(path)
+        # add the end of sentence token
+        EOS = ['</s>']
         with open(path, 'r') as f:
             sentences = []
             for sentence in tqdm(f, desc='Processing file: {}'.format(path)):
-                sentences.append(sentence)
-
-        # add the end of sentence token
-        concated_seq = ' </s> '.join(sentences)
+                sentences += sentence.split() + EOS
         # split into list of tokens
-        self.data = concated_seq.split()
+        self.data = sentences
 
     def __getitem__(self, index):
         sentence = self.data[index * self.bptt:(index + 1) * self.bptt]
@@ -116,7 +115,7 @@ class Corpus(object):
         self.bptt = bptt
         self.concat = concat
 
-        self.vocab = get_vocab(path, ['train.txt'], min_freq=min_freq)
+        self.vocab = get_vocab(path, ['train.txt'], min_freq=min_freq, vocab_file=vocab_path)
         self.train = self.get_dataloader('train.txt', self.batch_size)
         self.valid = self.get_dataloader('valid.txt', 1)
         self.test = self.get_dataloader('test.txt', 1)

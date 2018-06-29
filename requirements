@@ -1,2 +1,3 @@
 tqdm
 torch>=0.3.0
+dill

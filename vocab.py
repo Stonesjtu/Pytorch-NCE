@@ -2,7 +2,7 @@
 
 This file is forked from pytorch/text repo at Github.com"""
 import os
-import pickle
+import dill as pickle
 import logging
 from collections import defaultdict, Counter
 
@@ -12,6 +12,35 @@ logger = logging.getLogger(__name__)
 
 def _default_unk_index():
     return 0
+
+
+def load_freq(freq_file):
+    """Load the frequency from text file"""
+    counter = Counter()
+    with open(freq_file) as f:
+        for line in f:
+            word, freq = line.split(' ')
+            counter[word] = freq
+    return counter
+
+
+def write_freq(counter, freq_file):
+    """Write the word-frequency pairs into text file
+
+    File format:
+
+        word1 freq1
+        word2 freq2
+
+    """
+    # sort by frequency, then alphabetically
+    words_and_frequencies = sorted(counter.items(), key=lambda tup: tup[0])
+    words_and_frequencies.sort(key=lambda tup: tup[1], reverse=True)
+    with open(freq_file, 'w') as f:
+        for word, freq in words_and_frequencies:
+            f.writelines('{} {}\n'.format(word, freq))
+
+
 
 class Vocab(object):
     """Defines a vocabulary object that will be used to numericalize a field.
@@ -34,18 +63,23 @@ class Vocab(object):
         """
         self.freqs = counter
         self.max_size = max_size
-        self.min_freq= min_freq
+        self.min_freq = min_freq
         self.specials = ['<unk>', '<s>']
         self.build()
 
 
-    def build(self):
+    def build(self, force_vocab=[]):
         """Build the required vocabulary according to attributes
 
         We need an explicit <unk> for NCE because this improve the precision of
         word frequency estimation in noise sampling
+
+        Args:
+            - force_vocab: force the vocabulary to be within this vocab
         """
         counter = self.freqs.copy()
+        if force_vocab:
+            min_freq = 1
         min_freq = max(self.min_freq, 1)
 
         self.idx2word = list(self.specials)
@@ -61,13 +95,13 @@ class Vocab(object):
 
         unk_freq = 0
         for word, freq in words_and_frequencies:
-            if freq < min_freq:
+
+            # for words not in force_vocab and with freq<th, throw to <unk>
+            if freq < min_freq and word not in force_vocab:
                 # count the unk frequency
                 unk_freq += freq
-                continue
-            if len(self.idx2word) == max_size:
-                continue
-            self.idx2word.append(word)
+            elif len(self.idx2word) != max_size:
+                self.idx2word.append(word)
 
         self.word2idx = defaultdict(_default_unk_index)
         self.word2idx.update({
@@ -92,28 +126,23 @@ class Vocab(object):
 
     def extend(self, v, sort=False):
         words = sorted(v.idx2word) if sort else v.idx2word
-        #TODO: speedup the dependency
+        # TODO: speedup the dependency
         for w in words:
             if w not in self.word2idx:
                 self.idx2word.append(w)
                 self.word2idx[w] = len(self.idx2word) - 1
 
-    def write_freq(self, freq_file):
-        """Write the word-frequency pairs into text file"""
-        with open(freq_file, 'w') as f:
-            for word, freq in self.freqs.most_common():
-                f.writelines('{} {}\n'.format(word, freq))
-
 
 def check_vocab(vocab):
     """A util function to check the vocabulary correctness"""
-    ## one word for one index
+    # one word for one index
     assert len(vocab.idx2word) == len(vocab.word2idx)
 
     # no duplicate words in idx2word
     assert len(set(vocab.idx2word)) == len(vocab.idx2word)
 
-def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
+
+def get_vocab(base_path, file_list, min_freq=1, force_recount=False, vocab_file=None):
     """Build vocabulary file with each line the word and frequency
 
     The vocabulary object is cached at the first build, aiming at reducing
@@ -124,6 +153,9 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
         - min_freq: minimal frequency to truncate
         - force_recount: force a re-count of word frequency regardless of the
         Count cache file
+        - vocab_file: a specific vocabulary file. If not None, the returned
+        vocabulary will only count the words in vocab_file, with others treated
+        as <unk>
 
     Return:
         - vocab: the Vocab object
@@ -134,9 +166,8 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
     if os.path.exists(cache_file) and not force_recount:
         logger.debug('Load cached vocabulary object')
         vocab = pickle.load(open(cache_file, 'rb'))
-        if not min_freq is None:
+        if min_freq:
             vocab.min_freq = min_freq
-        vocab.build()
         logger.debug('Load cached vocabulary object finished')
     else:
         logger.debug('Refreshing vocabulary')
@@ -146,13 +177,17 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False):
                 counter.update(line.split())
                 counter.update(['<s>', '</s>'])
         vocab = Vocab(counter, min_freq=min_freq)
-        vocab.build()
         logger.debug('Refreshing vocabulary finished')
 
         # saving for future uses
         freq_file = os.path.join(base_path, 'freq.txt')
-        vocab.write_freq(freq_file)
+        write_freq(vocab.freqs, freq_file)
         pickle.dump(vocab, open(cache_file, 'wb'))
 
+    force_vocab = []
+    if vocab_file:
+        with open(vocab_file) as f:
+            force_vocab = set([line.strip() for line in f])
+    vocab.build(force_vocab=force_vocab)
     check_vocab(vocab)
     return vocab
