@@ -82,7 +82,9 @@ class Vocab(object):
             min_freq = 1
         min_freq = max(self.min_freq, 1)
 
-        self.idx2word = list(self.specials)
+        # delete the special tokens from given vocabulary
+        force_vocab = [word for word in force_vocab if word not in self.specials] + ['</s>']
+        self.idx2word = list(self.specials) + force_vocab
 
         # Do not count the BOS and UNK as frequency term
         for word in self.specials:
@@ -98,9 +100,8 @@ class Vocab(object):
 
             # for words not in force_vocab and with freq<th, throw to <unk>
             if freq < min_freq and word not in force_vocab:
-                # count the unk frequency
                 unk_freq += freq
-            elif len(self.idx2word) != max_size:
+            elif len(self.idx2word) != max_size and not force_vocab:
                 self.idx2word.append(word)
 
         self.word2idx = defaultdict(_default_unk_index)
