@@ -83,12 +83,15 @@ class Vocab(object):
         min_freq = max(self.min_freq, 1)
 
         # delete the special tokens from given vocabulary
-        force_vocab = [word for word in force_vocab if word not in self.specials] + ['</s>']
-        self.idx2word = list(self.specials) + force_vocab
+        force_vocab = set(force_vocab)
+        force_vocab.discard('</s>')
 
         # Do not count the BOS and UNK as frequency term
         for word in self.specials:
+            force_vocab.discard(word)
             del counter[word]
+
+        self.idx2word = self.specials + ['</s>'] + list(force_vocab)
         max_size = None if self.max_size is None else self.max_size + len(self.idx2word)
 
         # sort by frequency, then alphabetically
@@ -188,7 +191,7 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False, vocab_file=
     force_vocab = []
     if vocab_file:
         with open(vocab_file) as f:
-            force_vocab = set([line.strip() for line in f])
+            force_vocab = [line.strip() for line in f]
     vocab.build(force_vocab=force_vocab)
     check_vocab(vocab)
     return vocab
