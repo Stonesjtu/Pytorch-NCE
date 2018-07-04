@@ -153,3 +153,72 @@ def build_unigram_noise(freq):
     noise = freq / total
     assert abs(noise.sum() - 1) < 0.001
     return noise
+
+def all_gather(tensor):
+    """An utilization function to do all gather without constructing tensor list
+
+    This function doesn't work as expected since NCCL's all_gather method doesn't
+    support unequal sized data
+
+    Args:
+        - tensor: the tensor to be gathered, should be of same size except for
+        the first dim. e.g. (3, N), (6, N)
+    """
+    # lazy import
+    import torch.distributed as dist
+
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
+
+    # communicate the tensor size
+    size_tensor = tensor.long().new([tensor.numel()])
+    size_list = [tensor.long().new([0]) for _ in range(world_size)]
+    dist.all_gather(
+        tensor_list=size_list,
+        tensor=size_tensor,
+    )
+
+    print('size ready')
+
+    total_numel = size_tensor.sum().item()
+    data_tensor_list = [tensor.new(total_numel) for _ in range(world_size)]
+    print(dist.get_rank(), total_numel)
+
+    dist.all_gather(
+        tensor_list=data_tensor_list,
+        tensor=tensor,
+    )
+
+    print('data ready')
+    # reshaped_tensor_list = [t.view(-1, *tensor.size()) for t in data_tensor_list]
+    reshaped_tensor = data_tensor_list[rank].view(-1, *tensor.size()[1:])
+
+    return reshaped_tensor
+
+def all_gather_equal(tensor):
+    """An utilization function to do all gather without constructing tensor list
+
+    Args:
+        - tensor: the tensor to be gathered, should be of same size
+
+    """
+    # lazy import
+    import torch.distributed as dist
+
+    world_size = dist.get_world_size()
+    rank = dist.get_rank()
+
+    total_numel = tensor.numel()
+    data_tensor_list = [tensor.new(total_numel * world_size).zero_()]
+    # print(dist.get_rank(), total_numel)
+
+    dist.all_gather(
+        tensor_list=data_tensor_list,
+        tensor=tensor,
+    )
+
+    # print('data ready')
+    # reshaped_tensor_list = [t.view(-1, *tensor.size()) for t in data_tensor_list]
+    reshaped_tensor = data_tensor_list[0].view(-1, *tensor.size()[1:])
+
+    return reshaped_tensor

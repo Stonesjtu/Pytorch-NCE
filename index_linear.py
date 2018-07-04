@@ -61,7 +61,7 @@ class IndexLinear(NCELoss):
         target_bias = self.bias.index_select(0, target_idx)  # N
         target_score = torch.sum(target_batch * input, dim=1) + target_bias # N X 1 X H * N X H X 1
 
-        noise_batch = transfer(self.emb(noise_idx.cpu()), None)  # Nr X H
+        noise_batch = transfer(self.emb(noise_idx), None)  # Nr X H
         noise_bias = self.bias.index_select(0, noise_idx)  # Nr
         noise_score = torch.matmul(input, noise_batch.t()) + noise_bias.unsqueeze(0)  # N X Nr
         return target_score.view(original_size), noise_score.view(*original_size, -1)
