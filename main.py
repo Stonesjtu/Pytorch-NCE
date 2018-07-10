@@ -114,12 +114,12 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
         dist.broadcast(param.data, src=0)
 
     for num_batch, data_batch in enumerate(pbar):
-        data, target, length = process_data(data_batch, cuda=True, sep_target=False)
         # warming-up
         optimizer.zero_grad()
         if model.encoder.weight.grad is not None:
             model.encoder.weight.grad.zero_()
-        data, target, length = process_data(data_batch, cuda=False, sep_target=False)
+
+        data, target, length = process_data(data_batch, cuda=True, sep_target=False)
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
             loss = model(data, length.cuda())
             loss.backward()
