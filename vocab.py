@@ -64,7 +64,7 @@ class Vocab(object):
         self.freqs = counter
         self.max_size = max_size
         self.min_freq = min_freq
-        self.specials = ['<unk>', '<s>']
+        self.specials = ['<unk>', '<s>', '</s>']
         self.build()
 
 
@@ -83,15 +83,13 @@ class Vocab(object):
         min_freq = max(self.min_freq, 1)
 
         # delete the special tokens from given vocabulary
-        force_vocab = set(force_vocab)
-        force_vocab.discard('</s>')
+        force_vocab = [w for w in force_vocab if w not in self.specials]
 
         # Do not count the BOS and UNK as frequency term
         for word in self.specials:
-            force_vocab.discard(word)
             del counter[word]
 
-        self.idx2word = self.specials + ['</s>'] + list(force_vocab)
+        self.idx2word = self.specials + force_vocab
         max_size = None if self.max_size is None else self.max_size + len(self.idx2word)
 
         # sort by frequency, then alphabetically
@@ -113,8 +111,10 @@ class Vocab(object):
         })
 
         self.idx2count = [self.freqs[word] for word in self.idx2word]
-        self.idx2count[0] += unk_freq
-        self.idx2count[1] = 0
+        # set the frequencies for special tokens by miracle trial
+        self.idx2count[0] += unk_freq  # <unk>
+        self.idx2count[1] = 0  # <s>
+        self.idx2count[2] = self.freqs['</s>']  # </s>
 
     def __eq__(self, other):
         if self.freqs != other.freqs:
