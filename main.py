@@ -109,12 +109,10 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
     pbar = tqdm(data_source, desc='Training PPL: ....', disable=(not dist.get_rank() == 0))
 
     dist.broadcast(model.encoder.weight.data, src=0)
-    print(model.encoder.weight.data.mean())
 
     for param in dense_params:
         dist.broadcast(param.data, src=0)
 
-    print(corpus.train.dataset.vocab.idx2word[50:55])
     for num_batch, data_batch in enumerate(pbar):
         data, target, length = process_data(data_batch, cuda=True, sep_target=False)
         # warming-up
@@ -249,9 +247,6 @@ def main(model, lock):
     best_val_ppl = None
     if args.cuda:
         model.cuda()
-        # for p in dense_params:
-        #     p.data = p.data.cuda()
-        # model.criterion.noise = model.criterion.noise.cuda()
         model.criterion.to_cuda()
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
