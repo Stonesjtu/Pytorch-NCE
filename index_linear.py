@@ -59,12 +59,13 @@ class IndexLinear(NCELoss):
         target_bias = self.bias.index_select(0, target_idx)  # N
         target_score = torch.sum(target_batch * input, dim=1) + target_bias # N X 1 X H * N X H X 1
 
-        noise_batch = transfer(self.emb(noise_idx.cpu()), 0)  # Nr X H
+        noise_batch = transfer(self.emb(noise_idx.cpu()), None)  # Nr X H
         noise_bias = self.bias.index_select(0, noise_idx)  # Nr
         noise_score = torch.matmul(input, noise_batch.t()) + noise_bias.unsqueeze(0)  # N X Nr
         return target_score.view(original_size), noise_score.view(*original_size, -1)
 
     def ce_loss(self, target_idx, input, target_batch):
+        self.gpu_weight = self.weight.cuda()
         score = F.linear(input, self.gpu_weight, self.bias) # (N, V)
         loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
         return loss

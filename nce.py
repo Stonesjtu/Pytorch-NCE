@@ -62,7 +62,7 @@ class NCELoss(nn.Module):
         super(NCELoss, self).__init__()
 
         self.register_buffer('noise', noise)
-        self.alias = AliasMethod(noise)
+        self.alias = AliasMethod(self.noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
         self.size_average = size_average
@@ -70,6 +70,9 @@ class NCELoss(nn.Module):
         self.per_word = per_word
         self.per_word = False
         self.nce = nce
+
+    def to_cuda(self):
+        self.alias = AliasMethod(self.noise.cuda())
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
