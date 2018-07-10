@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
 from tqdm import tqdm
 
-from vocab import get_vocab
+from vocab import get_vocab, BOS, EOS
 
 def zero_padding(sentences, length):
     """
@@ -59,7 +59,7 @@ class LMDataset(Dataset):
     def __getitem__(self, index):
         raw_sentence = self.data[index]
         # truncate the sequence length to maximum of BPTT
-        sentence = ['<s>'] + raw_sentence[:self.bptt] + ['</s>']
+        sentence = [BOS] + raw_sentence[:self.bptt] + [EOS]
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
@@ -80,12 +80,12 @@ class ContLMDataset(LMDataset):
     def tokenize(self, path):
         """Tokenizes a text file."""
         assert os.path.exists(path)
-        # add the end of sentence token
-        EOS = ['</s>']
+        # add the start of sentence token
+        sentence_sep = [BOS]
         with open(path, 'r') as f:
-            sentences = []
+            sentences = [BOS]
             for sentence in tqdm(f, desc='Processing file: {}'.format(path)):
-                sentences += sentence.split() + EOS
+                sentences += sentence.split() + sentence_sep
         # split into list of tokens
         self.data = sentences
 

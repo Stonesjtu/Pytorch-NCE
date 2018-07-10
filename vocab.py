@@ -9,6 +9,9 @@ from collections import defaultdict, Counter
 from tqdm import tqdm
 logger = logging.getLogger(__name__)
 
+UNK = '<unk>'  # unknown word
+BOS = '<s>'  # sentence start
+EOS = '</s>'  # sentence end
 
 def _default_unk_index():
     return 0
@@ -64,7 +67,7 @@ class Vocab(object):
         self.freqs = counter
         self.max_size = max_size
         self.min_freq = min_freq
-        self.specials = ['<unk>', '<s>', '</s>']
+        self.specials = [UNK, BOS, EOS]
         self.build()
 
 
@@ -179,7 +182,7 @@ def get_vocab(base_path, file_list, min_freq=1, force_recount=False, vocab_file=
             full_path = os.path.join(base_path, filename)
             for line in tqdm(open(full_path, 'r'), desc='Building vocabulary: '):
                 counter.update(line.split())
-                counter.update(['<s>', '</s>'])
+                counter.update([BOS, EOS])
         vocab = Vocab(counter, min_freq=min_freq)
         logger.debug('Refreshing vocabulary finished')
 
