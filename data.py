@@ -116,6 +116,11 @@ class Corpus(object):
         self.concat = concat
 
         self.vocab = get_vocab(path, ['train.txt'], min_freq=min_freq, vocab_file=vocab_path)
+        if self.concat:
+            # set the frequencies for special tokens by miracle trial
+            self.vocab.idx2count[1] = self.vocab.freqs[BOS]  # <s>
+            self.vocab.idx2count[2] = 0  # </s>
+
         self.train = self.get_dataloader('train.txt', self.batch_size)
         self.valid = self.get_dataloader('valid.txt', 1)
         self.test = self.get_dataloader('test.txt', 1)
