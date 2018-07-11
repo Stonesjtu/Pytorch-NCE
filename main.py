@@ -92,17 +92,17 @@ logger.info('model definition:\n %s', model)
 #################################################################
 
 dense_params = [model.criterion.bias] + list(model.rnn.parameters())
+dense_params += list(model.projection.parameters())
 model.criterion.emb = model.encoder  # test tying weight
 model.encoder.share_memory()
 
 def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     optimizer = optim.SGD(
-        params=model.rnn.parameters(),
+        params=dense_params,
         lr=lr,
         momentum=momentum,
         weight_decay=weight_decay,
     )
-    optimizer.add_param_group({'params': model.criterion.bias})
     # Turn on training mode which enables dropout.
     model.train()
     model.criterion.nce = args.nce
@@ -145,11 +145,6 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
         values = emb_grad._values()
 
         # norm clipping is critical for preventing nan at optimizing
-        norm = values.norm()
-        emb_clip = 1
-        if norm > emb_clip:
-            values.mul_(emb_clip / norm)
-        # model.encoder.weight.data.add_(-lr * emb_grad)
         with lock:
             w_d = weight_decay * model.encoder.weight.data[indices]
             values.add_(w_d)
