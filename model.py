@@ -13,6 +13,8 @@ class RNNModel(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp, sparse=True)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
+        # extra projection layer for weight tying
+        self.projection = nn.Linear(nhid, ninp, bias=False)
 
         self.nhid = nhid
         self.nlayers = nlayers
@@ -39,7 +41,8 @@ class RNNModel(nn.Module):
         input_emb = emb_gpu[:, :-1].contiguous()
         target_emb = emb_gpu[:, 1:].contiguous()
         rnn_output = self._rnn(input_emb)
-        loss = self.criterion(sentences[:, 1:].cuda(), rnn_output, target_emb)
+        projected_output = self.projection(rnn_output)
+        loss = self.criterion(sentences[:, 1:].cuda(), projected_output, target_emb)
         loss = torch.masked_select(loss, mask)
 
         return loss.mean()
