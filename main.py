@@ -205,7 +205,7 @@ def run_epoch(lock, model, epoch, lr, best_val_ppl):
             val_ppl)
     )
     def torch_save(*args):
-        if dist.get_rank == 0:
+        if dist.get_rank() == 0:
             torch.save(*args)
 
     with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
