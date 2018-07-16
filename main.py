@@ -20,6 +20,7 @@ from utils import process_data, build_unigram_noise, setup_parser, setup_logger
 from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
+from utils import all_gather_equal, all_gather
 
 
 parser = setup_parser()
@@ -148,9 +149,8 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
         emb_grad = model.encoder.weight.grad
         indices = emb_grad._indices().view(-1)
         values = emb_grad._values()
-        from utils import all_gather_equal
-        indices = all_gather_equal(indices)
-        values = all_gather_equal(values)
+        indices = all_gather(indices)
+        values = all_gather(values)
         # print(indices.size())
         # print(values.size())
         new_grad = torch.cuda.sparse.FloatTensor(model.encoder.weight.size())

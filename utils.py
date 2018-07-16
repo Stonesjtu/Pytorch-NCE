@@ -154,11 +154,12 @@ def build_unigram_noise(freq):
     assert abs(noise.sum() - 1) < 0.001
     return noise
 
+
 def all_gather(tensor):
     """An utilization function to do all gather without constructing tensor list
 
-    This function doesn't work as expected since NCCL's all_gather method doesn't
-    support unequal sized data
+    This function pad the tensor to the longest length with zeros since NCCL's
+    all_gather method doesn't support unequal sized data
 
     Args:
         - tensor: the tensor to be gathered, should be of same size except for
@@ -172,28 +173,27 @@ def all_gather(tensor):
 
     # communicate the tensor size
     size_tensor = tensor.long().new([tensor.numel()])
-    size_list = [tensor.long().new([0]) for _ in range(world_size)]
-    dist.all_gather(
-        tensor_list=size_list,
-        tensor=size_tensor,
+    dist.all_reduce(
+        size_tensor,
+        op=dist.reduce_op.MAX,
     )
 
-    print('size ready')
+    total_numel = size_tensor.item()
 
-    total_numel = size_tensor.sum().item()
-    data_tensor_list = [tensor.new(total_numel) for _ in range(world_size)]
-    print(dist.get_rank(), total_numel)
+    container_tensor = tensor.new(total_numel).zero_()
+    container_tensor[:tensor.numel()] = tensor.view(-1)
+
+    data_tensor_list = [tensor.new(total_numel * world_size).zero_()]
 
     dist.all_gather(
         tensor_list=data_tensor_list,
-        tensor=tensor,
+        tensor=container_tensor,
     )
 
-    print('data ready')
-    # reshaped_tensor_list = [t.view(-1, *tensor.size()) for t in data_tensor_list]
-    reshaped_tensor = data_tensor_list[rank].view(-1, *tensor.size()[1:])
+    reshaped_tensor = data_tensor_list[0].view(-1, *tensor.size()[1:])
 
     return reshaped_tensor
+
 
 def all_gather_equal(tensor):
     """An utilization function to do all gather without constructing tensor list
