@@ -129,38 +129,30 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
                 print(p)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
+        # norm clipping is critical for preventing nan at optimizing
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
-        optimizer.step()
 
         for param in dense_params:
-            dist.all_reduce(param.data, op=dist.reduce_op.SUM)
-            param.data.div_(dist.get_world_size())
+            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            param.grad.data.div_(dist.get_world_size())
 
-        if False and num_batch == 400:
-            print('rank {} finished computing gradient: {}'.format(dist.get_rank(), time.time()))
-            torch.cuda.synchronize()
-            print('rank {} started all reduce at: {}'.format(dist.get_rank(), time.time()))
-            for param in dense_params:
-                dist.all_reduce(param.data, op=dist.reduce_op.SUM)
-                param.data.div_(dist.get_world_size())
-            torch.cuda.synchronize()
-            print('rank {} completed all reduce at: {}'.format(dist.get_rank(), time.time()))
-
+        # gather all the gradients of Embedding
         emb_grad = model.encoder.weight.grad
         indices = emb_grad._indices().view(-1)
         values = emb_grad._values()
         indices = all_gather(indices)
         values = all_gather(values)
-        # print(indices.size())
-        # print(values.size())
+
+        # coalesce the redundant indices for efficient l2 norm
         new_grad = torch.cuda.sparse.FloatTensor(model.encoder.weight.size())
         new_grad._indices().set_(indices)
         new_grad._values().set_(values)
         new_grad = new_grad.coalesce()
         indices = new_grad._indices().view(-1)
-        values = new_grad._values().mul_(0.25)
+        values = new_grad._values().div_(dist.get_world_size())
 
-        # norm clipping is critical for preventing nan at optimizing
+        # optimization step
+        optimizer.step()
         w_d = weight_decay * model.encoder.weight.data[indices]
         values.add_(w_d)
         model.encoder.weight.data.index_add_(0, indices, -lr * values)
@@ -265,9 +257,12 @@ def main(model, lock):
 
     if not args.prof:
         # Run on test data.
-        test_ppl = evaluate(model, corpus.test)
-        logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
-        sys.stdout.flush()
+        try:
+            test_ppl = evaluate(model, corpus.test)
+            logger.warning('| End of training | test ppl {:8.2f}'.format(test_ppl))
+            sys.stdout.flush()
+        except KeyboardInterrupt:
+            logger.warning('Exiting from evaluation early')
 
 if __name__ == '__main__':
     processes = []
