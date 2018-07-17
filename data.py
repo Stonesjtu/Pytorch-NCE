@@ -47,6 +47,8 @@ class LMDataset(Dataset):
         self.file_path = file_path
         self.bptt = bptt
         self.tokenize(file_path)
+        self.rank = 0
+        self.world_size = 1
 
     def tokenize(self, path):
         """Tokenizes a text file."""
@@ -58,8 +60,7 @@ class LMDataset(Dataset):
         self.data = sentences
 
     def __getitem__(self, index):
-        length = len(self.data)
-        offset = length * dist.get_rank() // dist.get_world_size()
+        offset = len(self) * self.rank
         index += offset
         raw_sentence = self.data[index]
         # truncate the sequence length to maximum of BPTT
@@ -67,7 +68,25 @@ class LMDataset(Dataset):
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
-        return len(self.data) // dist.get_world_size()
+        return len(self.data) // self.world_size
+
+    def set_distributed(self, condition=True):
+        """Convert the dataset to distributed dataset
+
+        This is a simple version of distributed dataset, each rank will get
+        a unique chunk of the whole dataset
+        """
+        if condition:
+            self.rank = dist.get_rank()
+            self.world_size = dist.get_world_size()
+        else:
+            self.rank = 0
+            self.world_size = 1
+
+
+class DistributedDataset(Dataset):
+    def __init__(self, datset):
+        super(DistributedDataset, self).__init__()
 
 
 
@@ -95,14 +114,13 @@ class ContLMDataset(LMDataset):
         self.data = sentences
 
     def __getitem__(self, index):
-        length = len(self.data) // self.bptt
-        offset = length * dist.get_rank() // dist.get_world_size()
+        offset = len(self) * self.rank
         index += offset
         sentence = self.data[index * self.bptt:(index + 1) * self.bptt]
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
-        return len(self.data) // self.bptt // dist.get_world_size()
+        return len(self.data) // self.bptt // self.world_size
 
 
 def pad_collate_fn(batch):

@@ -235,6 +235,7 @@ def main(model, lock):
     dist.init_process_group('nccl', world_size=WORLD_SIZE, init_method='file:///tmp/shared_tile')
     torch.cuda.set_device(dist.get_rank())
     torch.manual_seed(1123 + dist.get_rank())
+    corpus.train.dataset.set_distributed()
     lr = args.lr
     best_val_ppl = None
     if args.cuda:
