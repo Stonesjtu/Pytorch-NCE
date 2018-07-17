@@ -15,8 +15,8 @@ import torch.multiprocessing as mp
 
 import data
 from model import RNNModel
-from nce import NCELoss
-from utils import process_data, build_unigram_noise, setup_parser, setup_logger
+from utils import process_data, build_unigram_noise, setup_parser, \
+    setup_logger, get_gpu_count
 from generic_model import GenModel
 from index_gru import IndexGRU
 from index_linear import IndexLinear
@@ -87,16 +87,15 @@ else:
     logger.error('The index module [%s] is not supported yet' % args.index_module)
     raise(NotImplementedError('index module not supported'))
 
+model.criterion.emb = model.encoder  # test tying weight
 logger.info('model definition:\n %s', model)
 #################################################################
 # Training code
 #################################################################
 
-dense_params = [model.criterion.bias] + list(model.rnn.parameters())
-dense_params += list(model.projection.parameters())
-model.criterion.emb = model.encoder  # test tying weight
-
-def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
+def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
+    dense_params = [model.criterion.bias] + list(model.rnn.parameters())
+    dense_params += list(model.projection.parameters())
     optimizer = optim.SGD(
         params=dense_params,
         lr=lr,
@@ -124,9 +123,8 @@ def train(lock, model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0
         with torch.autograd.profiler.profile(enabled=args.prof, use_cuda=True) as p:
             loss = model(data, length.cuda())
             loss.backward()
-        if args.prof:
-            if dist.get_rank() == 0:
-                print(p)
+        if args.prof and dist.get_rank() == 0:
+            print(p)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         # norm clipping is critical for preventing nan at optimizing
@@ -197,10 +195,10 @@ def evaluate(model, data_source, cuda=args.cuda):
     return math.exp(eval_loss/total_length)
 
 
-def run_epoch(lock, model, epoch, lr, best_val_ppl):
+def run_epoch(model, epoch, lr, best_val_ppl):
     """A training epoch includes training, evaluation and logging"""
     epoch_start_time = time.time()
-    train(lock, model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
+    train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
     if args.prof:
         return
     val_ppl = evaluate(model, corpus.valid)
@@ -229,10 +227,8 @@ def run_epoch(lock, model, epoch, lr, best_val_ppl):
             lr /= args.lr_decay
     return model, lr, best_val_ppl
 
-WORLD_SIZE = 4
-
-def main(model, lock):
-    dist.init_process_group('nccl', world_size=WORLD_SIZE, init_method='file:///tmp/shared_tile')
+def main(model, world_size):
+    dist.init_process_group('nccl', world_size=world_size, init_method='file:///tmp/shared_tile')
     torch.cuda.set_device(dist.get_rank())
     torch.manual_seed(1123 + dist.get_rank())
     corpus.train.dataset.set_distributed()
@@ -245,7 +241,7 @@ def main(model, lock):
         # At any point you can hit Ctrl + C to break out of training early.
         try:
             for epoch in range(1, args.epochs + 1):
-                model, lr, best_val_ppl = run_epoch(lock, model, epoch, lr, best_val_ppl)
+                model, lr, best_val_ppl = run_epoch(model, epoch, lr, best_val_ppl)
                 if args.prof:
                     break
         except KeyboardInterrupt:
@@ -267,9 +263,10 @@ def main(model, lock):
 
 if __name__ == '__main__':
     processes = []
-    lock = mp.Lock()
-    for rank in range(WORLD_SIZE):
-        p = mp.Process(target=main, args=(model, lock))
+    world_size = get_gpu_count()
+
+    for rank in range(world_size):
+        p = mp.Process(target=main, args=(model, world_size))
         p.start()
         processes.append(p)
     for p in processes:

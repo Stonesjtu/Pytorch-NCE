@@ -1,4 +1,5 @@
 # Collections of some helper functions
+import os
 import logging
 import argparse
 
@@ -222,3 +223,15 @@ def all_gather_equal(tensor):
     reshaped_tensor = data_tensor_list[0].view(-1, *tensor.size()[1:])
 
     return reshaped_tensor
+
+def get_gpu_count():
+    """Get the gpu count by global environment
+
+    This function won't check if the gpu_id is valid
+
+    Returns:
+        - count: number of GPUs specified by environ
+    """
+    cuda_devices = os.getenv('CUDA_VISIBLE_DEVICES', '').strip().split(',')
+    valid_id = [idx for idx in cuda_devices if idx != '']
+    return len(valid_id)
