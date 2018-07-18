@@ -7,13 +7,10 @@ import math
 from tqdm import tqdm
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
-import torch.autograd as autograd
 
 import data
 from model import RNNModel
-from nce import NCELoss
 from utils import process_data, build_unigram_noise, setup_parser, setup_logger
 from generic_model import GenModel
 from index_gru import IndexGRU
@@ -50,12 +47,12 @@ corpus = data.Corpus(
 ################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
-ntoken = len(corpus.train.dataset.vocab)
+ntoken = len(corpus.vocab)
 logger.info('Vocabulary size is {}'.format(ntoken))
 
 # noise for soise sampling in NCE
 noise = build_unigram_noise(
-    torch.FloatTensor(corpus.train.dataset.vocab.idx2count)
+    torch.FloatTensor(corpus.vocab.idx2count)
 )
 if args.cuda:
     noise = noise.cuda()
@@ -77,7 +74,8 @@ if args.index_module == 'linear':
     sep_target = True
 
 elif args.index_module == 'gru':
-    logger.warning('Falling into one layer GRU due to indx_GRU supporting')
+    if args.nlayers != 1:
+        logger.warning('Falling into one layer GRU due to Index_GRU supporting')
     nce_criterion = IndexGRU(
         ntoken, args.nhid, args.nhid,
         args.dropout,
@@ -204,6 +202,7 @@ if __name__ == '__main__':
 
     else:
         # Load the best saved model.
+        logger.warning('Evaluating existing model {}'.format(args.save))
         with open(args.save, 'rb') as f:
             model = torch.load(f)
 
