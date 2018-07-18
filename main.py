@@ -44,58 +44,63 @@ corpus = data.Corpus(
     bptt=args.bptt,
 )
 
-################################################################## Build the criterion and model, setup the NCE module
-#################################################################
-
 ntoken = len(corpus.vocab)
 logger.info('Vocabulary size is {}'.format(ntoken))
 
-# noise for soise sampling in NCE
-noise = build_unigram_noise(
-    torch.FloatTensor(corpus.vocab.idx2count)
-)
-if args.cuda:
-    noise = noise.cuda()
+################################################################## Build the criterion and model, setup the NCE module
+#################################################################
 
-# setting up NCELoss modules
-if args.index_module == 'linear':
-    criterion = IndexLinear(
-        args.nhid,
-        ntoken,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
+def build_model():
+    """Build the model according to CLI arguments
+
+    Global Dependencies:
+        - corpus
+        - args
+    """
+    # noise for soise sampling in NCE
+    noise = build_unigram_noise(
+        torch.FloatTensor(corpus.vocab.idx2count)
     )
-    criterion.nce = args.nce
-    model = RNNModel(
-        ntoken, args.emsize, args.nhid, args.nlayers,
-        criterion=criterion, dropout=args.dropout,
-    )
-    sep_target = True
 
-elif args.index_module == 'gru':
-    if args.nlayers != 1:
-        logger.warning('Falling into one layer GRU due to Index_GRU supporting')
-    nce_criterion = IndexGRU(
-        ntoken, args.nhid, args.nhid,
-        args.dropout,
-        noise=noise,
-        noise_ratio=args.noise_ratio,
-        norm_term=args.norm_term,
-    )
-    model = GenModel(
-        criterion=nce_criterion,
-    )
-    sep_target = False
+    # setting up NCELoss modules
+    if args.index_module == 'linear':
+        criterion = IndexLinear(
+            args.nhid,
+            ntoken,
+            noise=noise,
+            noise_ratio=args.noise_ratio,
+            norm_term=args.norm_term,
+        )
+        criterion.nce = args.nce
+        model = RNNModel(
+            ntoken, args.emsize, args.nhid, args.nlayers,
+            criterion=criterion, dropout=args.dropout,
+        )
+    elif args.index_module == 'gru':
+        if args.nlayers != 1:
+            logger.warning('Falling into one layer GRU due to Index_GRU supporting')
+        nce_criterion = IndexGRU(
+            ntoken, args.nhid, args.nhid,
+            args.dropout,
+            noise=noise,
+            noise_ratio=args.noise_ratio,
+            norm_term=args.norm_term,
+        )
+        model = GenModel(
+            criterion=nce_criterion,
+        )
+    else:
+        logger.error('The index module [%s] is not supported yet' % args.index_module)
+        raise(NotImplementedError('index module not supported'))
 
-else:
-    logger.error('The index module [%s] is not supported yet' % args.index_module)
-    raise(NotImplementedError('index module not supported'))
+    if args.cuda:
+        model.cuda()
 
-if args.cuda:
-    model.cuda()
+    logger.info('model definition:\n %s', model)
+    return model
 
-logger.info('model definition:\n %s', model)
+model = build_model()
+sep_target = args.index_module == 'linear'
 #################################################################
 # Training code
 #################################################################
