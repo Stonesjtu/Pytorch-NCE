@@ -1,7 +1,6 @@
 import torch
-import numpy as np
 
-class AliasMethod(object):
+class AliasMultinomial(torch.nn.Module):
     '''Alias sampling method to speedup multinomial sampling
 
     The alias method treats multinomial sampling as a combination of uniform sampling and
@@ -15,20 +14,23 @@ class AliasMethod(object):
         - https://hips.seas.harvard.edu/blog/2013/03/03/the-alias-method-efficient-sampling-with-many-discrete-outcomes/
     '''
     def __init__(self, probs):
+        super(AliasMultinomial, self).__init__()
 
         probs = probs / probs.sum()
         cpu_probs = probs.cpu()
         K = len(probs)
-        self.prob = [0] * K
-        self.alias = [0] * K
+
+        # such a name helps to avoid the namespace check for nn.Module
+        self_prob = [0] * K
+        self_alias = [0] * K
 
         # Sort the data into the outcomes with probabilities
         # that are larger and smaller than 1/K.
         smaller = []
         larger = []
         for idx, prob in enumerate(cpu_probs):
-            self.prob[idx] = K*prob
-            if self.prob[idx] < 1.0:
+            self_prob[idx] = K*prob
+            if self_prob[idx] < 1.0:
                 smaller.append(idx)
             else:
                 larger.append(idx)
@@ -40,19 +42,19 @@ class AliasMethod(object):
             small = smaller.pop()
             large = larger.pop()
 
-            self.alias[small] = large
-            self.prob[large] = (self.prob[large] - 1.0) + self.prob[small]
+            self_alias[small] = large
+            self_prob[large] = (self_prob[large] - 1.0) + self_prob[small]
 
-            if self.prob[large] < 1.0:
+            if self_prob[large] < 1.0:
                 smaller.append(large)
             else:
                 larger.append(large)
 
         for last_one in smaller+larger:
-            self.prob[last_one] = 1
+            self_prob[last_one] = 1
 
-        self.prob = probs.new(self.prob)
-        self.alias = probs.new(self.alias).long()
+        self.register_buffer('prob', torch.Tensor(self_prob))
+        self.register_buffer('alias', torch.LongTensor(self_alias))
 
     def draw(self, *size):
         """Draw N samples from multinomial

@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from alias_multinomial import AliasMethod
+from alias_multinomial import AliasMultinomial
 
 
 class NCELoss(nn.Module):
@@ -62,7 +62,7 @@ class NCELoss(nn.Module):
         super(NCELoss, self).__init__()
 
         self.register_buffer('noise', noise)
-        self.alias = AliasMethod(noise)
+        self.alias = AliasMultinomial(noise)
         self.noise_ratio = noise_ratio
         self.norm_term = norm_term
         self.size_average = size_average
