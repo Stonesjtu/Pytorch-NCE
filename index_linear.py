@@ -42,27 +42,56 @@ class IndexLinear(NCELoss):
     def get_score(self, target_idx, noise_idx, input):
         """
         Shape:
-            - target_batch :math:`(N, E, 1+N_r)`where `N = length, E = embedding size, N_r = noise ratio`
+            - input: :math:`(N, E)` where `E = output embedding size`
+            - target_batch :math:`(N, E, 1+N_r)`where `N = length,
+            E = embedding size, N_r = noise ratio`
         """
 
-        # flatten the following matrix
-        input = input.contiguous().view(-1, input.size(-1))
-        original_size = target_idx.size() # the size will be used to pack the output of indexlinear
-        target_idx = target_idx.view(-1)
-        noise_idx = noise_idx.view(-1, noise_idx.size(-1))
+        # the size will be used to pack the output of indexlinear
+        original_size = target_idx.size()
 
-        indices = torch.cat([target_idx.unsqueeze(-1), noise_idx], dim=-1)
+        # flatten the following matrix
+        input = input.contiguous().view(-1, input.size(-1))  # N,E
+        target_idx = target_idx.view(-1).unsqueeze(-1)  # N,1
+        noise_idx = noise_idx.view(-1, noise_idx.size(-1))  # N,Nr
+
+        indices = torch.cat([target_idx, noise_idx], dim=-1)
+
+        logits = self._compute_sampled_logit(
+            indices, input
+        ).view(*original_size, -1)
+
+        target_score, noise_score = logits[:, :, 0], logits[:, :, 1:]
+        return target_score, noise_score
+
+    def _compute_sampled_logit(self, indices, input):
+        """compute the logits of given indices based on input vector
+
+        Args:
+            - indices: (N, M) where `N = length, M = samples per input`
+            - input: (N, d) where `d = vector dimension`
+
+        Returns:
+            - logits: (N, M) the computed logits
+        """
+
+        def select(matrix, idx):
+            return matrix.index_select(0, idx.view(-1)).view(*idx.size(), -1)
 
         # the pytorch's [] operator can't BP correctly with redundant indices
         # before version 0.2.0
+        # [] operator is much slower than index_select in pytorch-0.4.0
+
         input = input.unsqueeze(1)
-        target_batch = self.weight.index_select(0, indices.view(-1)).view(*indices.size(), -1).transpose(1,2)
-        bias = self.bias.index_select(0, indices.view(-1)).view_as(indices).unsqueeze(1)
-        out = torch.baddbmm(1, bias, 1, input, target_batch).view(*original_size, -1)
-        target_score, noise_score = out[:, :, 0], out[:, :, 1:]
-        return target_score, noise_score
+        target_batch = select(self.weight, indices).transpose(1,2)
+        bias = select(self.bias, indices).squeeze(-1).unsqueeze(1)
+        logits = torch.baddbmm(1, bias, 1, input, target_batch)
+        return logits
 
     def ce_loss(self, target_idx, input):
-        score = F.linear(input, self.weight, self.bias) # (N, V)
-        loss = self.ce(score.view(-1, score.size(-1)), target_idx.view(-1)).view_as(target_idx)
+        score = F.linear(input, self.weight, self.bias)  # (N, V)
+        loss = self.ce(
+            score.view(-1, score.size(-1)),
+            target_idx.view(-1)
+        ).view_as(target_idx)
         return loss

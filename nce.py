@@ -135,10 +135,10 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        target_prob, noise_prob = self.get_score(target_idx, noise_idx, *args, **kwargs)
+        target_score, noise_score = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
-        target_prob = target_prob.sub(self.norm_term).exp()
-        noise_prob = noise_prob.sub(self.norm_term).exp()
+        target_prob = target_score.sub(self.norm_term).exp()
+        noise_prob = noise_score.sub(self.norm_term).exp()
         return target_prob, noise_prob
 
     def get_score(self, target_idx, noise_idx, *args, **kwargs):
