@@ -186,12 +186,10 @@ class NCELoss(nn.Module):
         # predicted probability of the word comes from true data distribution
         p_true = p_model / (p_model + self.noise_ratio * p_noise)
         label = torch.cat(
-            [prob_model.new_ones(prob_model.size()).unsqueeze(2),
-             prob_noise.new_zeros(prob_noise.size())], dim=2
+            [torch.ones_like(prob_model).unsqueeze(2),
+             torch.zeros_like(prob_noise)], dim=2
         ).detach()
 
         loss = self.bce(p_true, label).sum(dim=2)
-
-
 
         return loss
