@@ -69,6 +69,7 @@ class NCELoss(nn.Module):
         self.reduce = reduce
         self.per_word = per_word
         self.nce = nce
+        self.bce = nn.BCELoss(reduce=False)
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
@@ -178,25 +179,19 @@ class NCELoss(nn.Module):
         Returns:
             - loss: a mis-classification loss for every single case
         """
-        def safe_log(tensor):
-            """A wrapper to compute logarithm
 
-            An epsilon is pre added for the sake of numeric stability
+        p_model = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2)
+        p_noise = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2)
 
-            Args:
-                - tensor: a pytorch Tensor or Variable
-            """
-            EPSILON = 1e-10
-            return torch.log(EPSILON + tensor)
+        # predicted probability of the word comes from true data distribution
+        p_true = p_model / (p_model + self.noise_ratio * p_noise)
+        label = torch.cat(
+            [prob_model.new_ones(prob_model.size()).unsqueeze(2),
+             prob_noise.new_zeros(prob_noise.size())], dim=2
+        ).detach()
 
-        model_loss = safe_log(prob_model / (
-            prob_model + self.noise_ratio * prob_target_in_noise
-        ))
+        loss = self.bce(p_true, label).sum(dim=2)
 
-        noise_loss = torch.sum(
-            safe_log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
-        ).squeeze()
 
-        loss = - (model_loss + noise_loss)
 
         return loss
