@@ -98,10 +98,14 @@ class NCELoss(nn.Module):
             prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
 
             if self.loss_type == 'nce':
-                loss = self.nce_loss(
-                    prob_model, prob_noise_in_model,
-                    prob_noise, prob_target_in_noise,
-                )
+                if self.training:
+                    loss = self.nce_loss(
+                        prob_model, prob_noise_in_model,
+                        prob_noise, prob_target_in_noise,
+                    )
+                else:
+                    # directly output the approximated posterior
+                    loss = - prob_model.log()
             elif self.loss_type == 'sampled':
                 loss = self.sampled_softmax_loss(
                     prob_model, prob_noise_in_model,
