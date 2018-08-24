@@ -107,6 +107,8 @@ Please run `pip install -r requirements` first to see if you have the required p
 <linear> and <gru> available, <gru> does not support PPL calculating )
 - `--train`: train or just evaluation existing model
 - `--vocab <None>`: use vocabulary file if specified, otherwise use the words in train.txt
+- `--loss [full, nce, sampled, mix]`: choose one of the loss type for training, the loss is
+converted to `full` for PPL evaluation automatically.
 
 ### Examples
 
@@ -125,11 +127,51 @@ Run conventional CE criterion:
 python main.py --cuda --train
 ```
 
+### A small benchmark in swbd+fisher dataset
+
+It's a performance showcase. The dataset is not bundled in this repo however.
+
+#### dataset statistics
+- training samples: 2200000 sentences, 22403872 words
+- built vocabulary size: ~30K
+
+#### testbed
+- 1080 Ti
+- i7 7700K
+- pytorch-0.4.0
+- cuda-8.0
+- cudnn-6.0.1
+
+#### how to run:
+```bash
+python main.py --train --batch-size 96 --cuda --loss nce --noise-ratio 500 --nhid 300 \
+  --emsize 300 --log-interval 1000 --nlayers 1 --dropout 0 --weight-decay 1e-8 \
+  --data data/swb --min-freq 3 --lr 2 --save nce-500-swb --concat
+```
+
+#### Running time
+- crossentropy: 6.5 mins/epoch (56K tokens/sec)
+- nce: 2 mins/epoch (187K tokens/sec)
+
+#### performance
+
+The rescore is performed on swbd 50-best, thanks to HexLee.
+
+| training loss type | evaluation type | PPL     | WER                         |
+| :---:              | :---:           | :--:    | :--:                        |
+| CE                 | normed(full)    | 55      | 13.3                        |
+| NCE                | unnormed(NCE)   | invalid | 13.4                        |
+| NCE                | normed(full)    | 55      | 13.4                        |
+| importance sample  | normed(full)    | 55      | 13.4                        |
+| importance sample  | sampled(500)    | invalid | 19.0(worse than w/o rescore) |
+
+
 ### File structure
 
 - `log/`: some log files of this scripts
 - `alias_multinomial.py`: alias method sampling
 - `nce.py`: the NCE module wrapper
+- `vocab.py`: a wrapper for vocabulary object
 - `index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
 - `index_gru.py`: an index module used by NCE, as a replacement for the whole language model module
 - `model.py`: the wrapper of all `nn.Module`s.
@@ -144,7 +186,7 @@ This example trains a multi-layer LSTM on a language modeling task.
 By default, the training script uses the PTB dataset, provided.
 
 ```bash
-python main.py --cuda --epochs 6        # Train a LSTM on PTB with CUDA
+python main.py --train --cuda --epochs 6        # Train a LSTM on PTB with CUDA
 ```
 
 The model will automatically use the cuDNN backend if run on CUDA with
