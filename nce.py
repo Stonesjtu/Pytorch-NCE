@@ -111,8 +111,19 @@ class NCELoss(nn.Module):
                     prob_model, prob_noise_in_model,
                     prob_noise, prob_target_in_noise,
                 )
+            elif self.loss_type == 'mix' and self.training:
+                loss = 0.5 * self.nce_loss(
+                    prob_model, prob_noise_in_model,
+                    prob_noise, prob_target_in_noise,
+                )
+                loss += 0.5 * self.sampled_softmax_loss(
+                    prob_model, prob_noise_in_model,
+                    prob_noise, prob_target_in_noise,
+                )
+
             else:
-                raise NotImplementedError('loss type {} not implemented'.format(self.loss_type))
+                current_stage = 'training' if self.training else 'inference'
+                raise NotImplementedError('loss type {} not implemented at {}'.format(self.loss_type, current_stage))
 
         else:
             # Fallback into conventional cross entropy
@@ -203,7 +214,7 @@ class NCELoss(nn.Module):
              torch.zeros_like(prob_noise)], dim=2
         )
 
-        loss = self.bce(p_true, label).sum(dim=2)
+        loss = self.bce(p_true, label).mean(dim=2)
 
         return loss
 

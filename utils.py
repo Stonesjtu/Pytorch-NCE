@@ -48,7 +48,7 @@ def setup_parser():
     parser.add_argument('--save', type=str, default='model.pt',
                         help='path to save the final model')
     parser.add_argument('--loss', type=str, default='full',
-                        help='use nce or full or sampled as loss function')
+                        help='use one of [nce, full, sampled, mix] as loss function')
     parser.add_argument('--index-module', type=str, default='linear',
                         help='index module to use in NCELoss wrapper')
     parser.add_argument('--noise-ratio', type=int, default=10,
