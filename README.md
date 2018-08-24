@@ -101,7 +101,8 @@ Please run `pip install -r requirements` first to see if you have the required p
 ### NCE related Arguments
 
 - `--nce`: whether to use NCE as approximation
-- `--noise-ratio <10>`: numbers of noise samples per data sample
+- `--noise-ratio <50>`: numbers of noise samples per batch, the noise is shared among the
+tokens in a single batch, for training speed.
 - `--norm-term <9>`: the constant normalization term `Ln(z)`
 - `--index-module <linear>`: index module to use for NCE module (currently
 <linear> and <gru> available, <gru> does not support PPL calculating )
