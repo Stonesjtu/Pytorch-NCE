@@ -70,8 +70,8 @@ def build_model():
             noise=noise,
             noise_ratio=args.noise_ratio,
             norm_term=args.norm_term,
+            loss_type=args.loss,
         )
-        criterion.nce = args.nce
         model = RNNModel(
             ntoken, args.emsize, args.nhid, args.nlayers,
             criterion=criterion, dropout=args.dropout,
@@ -115,7 +115,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
     )
     # Turn on training mode which enables dropout.
     model.train()
-    model.criterion.nce = args.nce
+    model.criterion.loss_type = args.loss
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
     for num_batch, data_batch in enumerate(pbar):
@@ -148,7 +148,7 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
     model.eval()
-    model.criterion.nce = False
+    model.criterion.loss_type = 'full'
 
     eval_loss = 0
     total_length = 0
@@ -162,7 +162,7 @@ def evaluate(model, data_source, cuda=args.cuda):
             eval_loss += loss.item() * cur_length
             total_length += cur_length
 
-    model.criterion.nce = True
+    model.criterion.loss_type = args.loss
 
     return math.exp(eval_loss/total_length)
 
@@ -172,7 +172,7 @@ def run_epoch(epoch, lr, best_val_ppl):
     epoch_start_time = time.time()
     train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
     val_ppl = evaluate(model, corpus.valid)
-    logger.warn(
+    logger.warning(
         '| end of epoch {:3d} | time: {:5.2f}s |'
         'valid ppl {:8.2f}'.format(
             epoch,

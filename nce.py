@@ -31,6 +31,8 @@ class NCELoss(nn.Module):
         size_average: average the loss by batch size
         reduce: returned the loss for each target_idx if True,
         this will ignore the value of `size_average`
+        loss_type: loss type of this module, currently 'full', 'sampled', 'nce'
+        are supported
 
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
@@ -48,16 +50,14 @@ class NCELoss(nn.Module):
     Shape:
     """
 
-    nce = True
-
     def __init__(self,
                  noise,
                  noise_ratio=10,
                  norm_term=9,
                  size_average=True,
                  reduce=False,
-                 per_word=True,
-                 nce=True,
+                 per_word=False,
+                 loss_type='nce',
                  ):
         super(NCELoss, self).__init__()
 
@@ -68,7 +68,9 @@ class NCELoss(nn.Module):
         self.size_average = size_average
         self.reduce = reduce
         self.per_word = per_word
-        self.nce = nce
+        self.bce = nn.BCELoss(reduce=False)
+        self.ce = nn.CrossEntropyLoss(reduce=False)
+        self.loss_type = loss_type
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
@@ -80,7 +82,7 @@ class NCELoss(nn.Module):
 
         batch = target.size(0)
         max_len = target.size(1)
-        if self.nce:
+        if self.loss_type != 'full':
 
             noise_samples = self.get_noise(batch, max_len)
 
@@ -95,10 +97,33 @@ class NCELoss(nn.Module):
             # (B,N), (B,N,Nr)
             prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
 
-            loss = self.nce_loss(
-                prob_model, prob_noise_in_model,
-                prob_noise, prob_target_in_noise,
-            )
+            if self.loss_type == 'nce':
+                if self.training:
+                    loss = self.nce_loss(
+                        prob_model, prob_noise_in_model,
+                        prob_noise, prob_target_in_noise,
+                    )
+                else:
+                    # directly output the approximated posterior
+                    loss = - prob_model.log()
+            elif self.loss_type == 'sampled':
+                loss = self.sampled_softmax_loss(
+                    prob_model, prob_noise_in_model,
+                    prob_noise, prob_target_in_noise,
+                )
+            elif self.loss_type == 'mix' and self.training:
+                loss = 0.5 * self.nce_loss(
+                    prob_model, prob_noise_in_model,
+                    prob_noise, prob_target_in_noise,
+                )
+                loss += 0.5 * self.sampled_softmax_loss(
+                    prob_model, prob_noise_in_model,
+                    prob_noise, prob_target_in_noise,
+                )
+
+            else:
+                current_stage = 'training' if self.training else 'inference'
+                raise NotImplementedError('loss type {} not implemented at {}'.format(self.loss_type, current_stage))
 
         else:
             # Fallback into conventional cross entropy
@@ -122,9 +147,9 @@ class NCELoss(nn.Module):
                 self.noise_ratio,
             )
         else:
-            noise_samples = self.alias.draw(1, max_len, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
+            noise_samples = self.alias.draw(1, 1, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
 
-        noise_samples = Variable(noise_samples)
+        noise_samples = Variable(noise_samples).contiguous()
         return noise_samples
 
     def _get_prob(self, target_idx, noise_idx, *args, **kwargs):
@@ -135,10 +160,10 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        target_prob, noise_prob = self.get_score(target_idx, noise_idx, *args, **kwargs)
+        target_score, noise_score = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
-        target_prob = target_prob.sub(self.norm_term).exp()
-        noise_prob = noise_prob.sub(self.norm_term).exp()
+        target_prob = target_score.sub(self.norm_term).exp()
+        noise_prob = noise_score.sub(self.norm_term).exp()
         return target_prob, noise_prob
 
     def get_score(self, target_idx, noise_idx, *args, **kwargs):
@@ -178,25 +203,31 @@ class NCELoss(nn.Module):
         Returns:
             - loss: a mis-classification loss for every single case
         """
-        def safe_log(tensor):
-            """A wrapper to compute logarithm
 
-            An epsilon is pre added for the sake of numeric stability
+        p_model = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2)
+        p_noise = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2)
 
-            Args:
-                - tensor: a pytorch Tensor or Variable
-            """
-            EPSILON = 1e-10
-            return torch.log(EPSILON + tensor)
+        # predicted probability of the word comes from true data distribution
+        p_true = p_model / (p_model + self.noise_ratio * p_noise)
+        label = torch.cat(
+            [torch.ones_like(prob_model).unsqueeze(2),
+             torch.zeros_like(prob_noise)], dim=2
+        )
 
-        model_loss = safe_log(prob_model / (
-            prob_model + self.noise_ratio * prob_target_in_noise
-        ))
+        loss = self.bce(p_true, label).mean(dim=2)
 
-        noise_loss = torch.sum(
-            safe_log((self.noise_ratio * prob_noise) / (prob_noise_in_model + self.noise_ratio * prob_noise)), -1
-        ).squeeze()
+        return loss
 
-        loss = - (model_loss + noise_loss)
+    def sampled_softmax_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
+        """Compute the sampled softmax loss based on the tensorflow's impl"""
+        logits = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).log()
+        q_logits = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).log()
+        # subtract Q for correction of biased sampling
+        logits = logits - q_logits
+        labels = torch.zeros_like(logits.narrow(2, 0, 1)).squeeze(2).long()
+        loss = self.ce(
+            logits.view(-1, logits.size(-1)),
+            labels.view(-1),
+        ).view_as(labels)
 
         return loss

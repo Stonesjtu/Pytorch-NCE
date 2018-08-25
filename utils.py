@@ -47,20 +47,25 @@ def setup_parser():
                         help='report interval')
     parser.add_argument('--save', type=str, default='model.pt',
                         help='path to save the final model')
-    parser.add_argument('--nce', action='store_true',
-                        help='use NCE as loss function')
+    parser.add_argument('--loss', type=str, default='full',
+                        help='use one of [nce, full, sampled, mix] as loss '
+                        'function')
     parser.add_argument('--index-module', type=str, default='linear',
                         help='index module to use in NCELoss wrapper')
-    parser.add_argument('--noise-ratio', type=int, default=10,
-                        help='set the noise ratio of NCE sampling')
+    parser.add_argument('--noise-ratio', type=int, default=50,
+                        help='set the noise ratio of NCE sampling, the noise'
+                        ' is shared among batch')
     parser.add_argument('--norm-term', type=int, default=9,
                         help='set the log normalization term of NCE sampling')
     parser.add_argument('--train', action='store_true',
-                        help='set train mode, otherwise only evaluation is performed')
+                        help='set train mode, otherwise only evaluation is'
+                        ' performed')
     parser.add_argument('--tb-name', type=str, default=None,
-                        help='the name which would be used in tensorboard record')
+                        help='the name which would be used in tensorboard '
+                        'record')
     parser.add_argument('--prof', action='store_true',
-                        help='Enable profiling mode, will execute only one batch data')
+                        help='Enable profiling mode, will execute only one '
+                        'batch data')
     return parser
 
 
