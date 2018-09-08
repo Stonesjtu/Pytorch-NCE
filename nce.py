@@ -214,7 +214,7 @@ class NCELoss(nn.Module):
              torch.zeros_like(prob_noise)], dim=2
         )
 
-        loss = self.bce(p_true, label).mean(dim=2)
+        loss = self.bce(p_true, label).sum(dim=2)
 
         return loss
 
