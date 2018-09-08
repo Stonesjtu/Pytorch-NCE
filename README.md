@@ -131,6 +131,13 @@ python main.py --cuda --train
 ### A small benchmark in swbd+fisher dataset
 
 It's a performance showcase. The dataset is not bundled in this repo however.
+The model is trained on concatenated sentences,but the hidden states are not
+passed across batches. An `<s>` is inserted between sentences. The model is
+evaluated on `<s>` padded sentences separately.
+
+Generally a model trained on concatenated sentences performs slightly worse than
+the one trained on separate sentences. But we saves 50% of training time by reducing
+the sentence padding operation.
 
 #### dataset statistics
 - training samples: 2200000 sentences, 22403872 words
@@ -158,12 +165,14 @@ python main.py --train --batch-size 96 --cuda --loss nce --noise-ratio 500 --nhi
 
 The rescore is performed on swbd 50-best, thanks to HexLee.
 
-| training loss type | evaluation type | PPL     | WER                         |
-| :---:              | :---:           | :--:    | :--:                        |
-| CE                 | normed(full)    | 55      | 13.3                        |
-| NCE                | unnormed(NCE)   | invalid | 13.4                        |
-| NCE                | normed(full)    | 55      | 13.4                        |
-| importance sample  | normed(full)    | 55      | 13.4                        |
+| training loss type | evaluation type | PPL     | WER                          |
+| :---:              | :---:           | :--:    | :--:                         |
+| 3gram              | normed          | ??      | 19.4                         |
+| CE(no concat)      | normed(full)    | 53      | 13.1                         |
+| CE                 | normed(full)    | 55      | 13.3                         |
+| NCE                | unnormed(NCE)   | invalid | 13.4                         |
+| NCE                | normed(full)    | 55      | 13.4                         |
+| importance sample  | normed(full)    | 55      | 13.4                         |
 | importance sample  | sampled(500)    | invalid | 19.0(worse than w/o rescore) |
 
 

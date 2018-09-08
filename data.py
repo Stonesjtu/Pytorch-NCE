@@ -59,7 +59,7 @@ class LMDataset(Dataset):
     def __getitem__(self, index):
         raw_sentence = self.data[index]
         # truncate the sequence length to maximum of BPTT
-        sentence = [BOS] + raw_sentence[:self.bptt] + [EOS]
+        sentence = [BOS] + raw_sentence[:self.bptt] + [BOS]
         return [self.vocab.word2idx[word] for word in sentence]
 
     def __len__(self):
