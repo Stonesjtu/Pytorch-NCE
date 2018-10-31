@@ -19,8 +19,9 @@ from index_linear import IndexLinear
 
 parser = setup_parser()
 args = parser.parse_args()
-logger = setup_logger('pt-nce-%s' % args.save)
+logger = setup_logger('{}'.format(args.save))
 logger.info(args)
+model_path = './saved_model/{}'.format(args.save)
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
@@ -179,12 +180,10 @@ def run_epoch(epoch, lr, best_val_ppl):
             (time.time() - epoch_start_time),
             val_ppl)
     )
-    with open(args.save+'.epoch_{}'.format(epoch), 'wb') as f:
-        torch.save(model, f)
+    torch.save(model, model_path + '.epoch_{}'.format(epoch))
     # Save the model if the validation loss is the best we've seen so far.
     if not best_val_ppl or val_ppl < best_val_ppl:
-        with open(args.save, 'wb') as f:
-            torch.save(model, f)
+        torch.save(model, model_path)
         best_val_ppl = val_ppl
     else:
         # Anneal the learning rate if no improvement has been seen in the
@@ -208,8 +207,7 @@ if __name__ == '__main__':
     else:
         # Load the best saved model.
         logger.warning('Evaluating existing model {}'.format(args.save))
-        with open(args.save, 'rb') as f:
-            model = torch.load(f)
+        model = torch.load(model_path)
 
     # Run on test data.
     test_ppl = evaluate(model, corpus.test)

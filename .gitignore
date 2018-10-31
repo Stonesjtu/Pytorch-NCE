@@ -1,7 +1,5 @@
-dcgan/data
 data
 *.pyc
-OpenNMT/data
 .cache
 *.pt*
 *.out
@@ -13,3 +11,4 @@ basis?/
 runs/
 *.lprof
 *epoch*
+saved_model/
