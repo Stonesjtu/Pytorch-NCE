@@ -5,25 +5,10 @@ import os
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
+from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 from vocab import get_vocab, BOS, EOS
-
-def zero_padding(sentences, length):
-    """
-    sentences: a list of sentence
-    length: the valid length of corresponding sentences
-    """
-    max_len = max(length)
-    padded_sentences = []
-    for length, sentence in zip(length, sentences):
-        padding_length = max_len - length
-        sentence = torch.LongTensor(sentence)
-        padding = torch.LongTensor(padding_length).zero_()
-        padded_sentence = torch.cat((sentence, padding), 0)
-        padded_sentences.append(padded_sentence)
-    padded_sentences = torch.stack(padded_sentences)
-    return padded_sentences
 
 
 class LMDataset(Dataset):
@@ -100,7 +85,7 @@ class ContLMDataset(LMDataset):
 def pad_collate_fn(batch):
     """Pad the list of word indexes into 2-D LongTensor"""
     length = [len(sentence) for sentence in batch]
-    return zero_padding(batch, length), torch.LongTensor(length)
+    return pad_sequence([torch.LongTensor(s) for s in batch], batch_first=True), torch.LongTensor(length)
 
 
 class Corpus(object):
