@@ -97,6 +97,7 @@ This NCE module is forked from the pytorch/examples repo.
 
 Please run `pip install -r requirements` first to see if you have the required python lib.
 - `tqdm` is used for process bar during training
+- `dill` is a more flexible replacement for pickle
 
 ### NCE related Arguments
 
