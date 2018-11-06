@@ -1,5 +1,7 @@
 """A generic NCE wrapper which speedup the training and inferencing"""
 
+import math
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -27,7 +29,8 @@ class NCELoss(nn.Module):
     Attributes:
         noise: the distribution of noise
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
-        norm_term: the normalization term (lnZ in paper)
+        norm_term: the normalization term (lnZ in paper), can be heuristically
+        determined by the number of classes, plz refer to the code.
         size_average: average the loss by batch size
         reduce: returned the loss for each target_idx if True,
         this will ignore the value of `size_average`
@@ -52,8 +55,8 @@ class NCELoss(nn.Module):
 
     def __init__(self,
                  noise,
-                 noise_ratio=10,
-                 norm_term=9,
+                 noise_ratio=100,
+                 norm_term='auto',
                  size_average=True,
                  reduce=False,
                  per_word=False,
@@ -64,7 +67,10 @@ class NCELoss(nn.Module):
         self.register_buffer('noise', noise)
         self.alias = AliasMultinomial(noise)
         self.noise_ratio = noise_ratio
-        self.norm_term = norm_term
+        if norm_term == 'auto':
+            self.norm_term = math.log(noise.numel())
+        else:
+            self.norm_term = norm_term
         self.size_average = size_average
         self.reduce = reduce
         self.per_word = per_word
