@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from alias_multinomial import AliasMultinomial
+from .alias_multinomial import AliasMultinomial
 
 
 class NCELoss(nn.Module):

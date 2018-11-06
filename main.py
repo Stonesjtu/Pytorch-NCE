@@ -13,8 +13,7 @@ import data
 from model import RNNModel
 from utils import process_data, build_unigram_noise, setup_parser, setup_logger
 from generic_model import GenModel
-from index_gru import IndexGRU
-from index_linear import IndexLinear
+from nce import IndexGRU, IndexLinear
 
 
 parser = setup_parser()

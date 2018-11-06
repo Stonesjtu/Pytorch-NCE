@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 
-from nce import NCELoss
+from .nce_loss import NCELoss
 
 class IndexGRU(NCELoss):
     """An indexed module for generic NCE

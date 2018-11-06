@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from nce import NCELoss
+from .nce_loss import NCELoss
 
 class IndexLinear(NCELoss):
     """A linear layer that only decodes the results of provided indices
@@ -50,7 +50,6 @@ class IndexLinear(NCELoss):
             - noise_idx: :math:`(B, L, N_r)` where `N_r is noise ratio`
             - input: :math:`(B, L, E)` where `E = output embedding size`
         """
-
 
         if self.per_word:
             return self._compute_sampled_logit(
