@@ -71,6 +71,7 @@ def build_model():
             noise_ratio=args.noise_ratio,
             norm_term=args.norm_term,
             loss_type=args.loss,
+            reduction='none',
         )
         model = RNNModel(
             ntoken, args.emsize, args.nhid, args.nlayers,

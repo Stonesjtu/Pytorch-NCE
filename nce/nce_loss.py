@@ -57,8 +57,7 @@ class NCELoss(nn.Module):
                  noise,
                  noise_ratio=100,
                  norm_term='auto',
-                 size_average=True,
-                 reduce=False,
+                 reduction='elementwise_mean',
                  per_word=False,
                  loss_type='nce',
                  ):
@@ -71,11 +70,10 @@ class NCELoss(nn.Module):
             self.norm_term = math.log(noise.numel())
         else:
             self.norm_term = norm_term
-        self.size_average = size_average
-        self.reduce = reduce
+        self.reduction = reduction
         self.per_word = per_word
-        self.bce = nn.BCELoss(reduce=False)
-        self.ce = nn.CrossEntropyLoss(reduce=False)
+        self.bce = nn.BCELoss(reduction='none')
+        self.ce = nn.CrossEntropyLoss(reduction='none')
         self.loss_type = loss_type
 
     def forward(self, target, *args, **kwargs):
@@ -135,11 +133,10 @@ class NCELoss(nn.Module):
             # Fallback into conventional cross entropy
             loss = self.ce_loss(target, *args, **kwargs)
 
-        if self.reduce:
-            if self.size_average:
-                return loss.mean()
-            else:
-                return loss.sum()
+        if self.reduction == 'elementwise_mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
         else:
             return loss
 
