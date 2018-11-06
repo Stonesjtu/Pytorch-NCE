@@ -180,11 +180,13 @@ The rescore is performed on swbd 50-best, thanks to HexLee.
 ### File structure
 
 - `log/`: some log files of this scripts
-- `alias_multinomial.py`: alias method sampling
-- `nce.py`: the NCE module wrapper
+- `nce/`: the NCE module wrapper
+    - `nce/nce_loss.py`: the NCE loss
+    - `nce/alias_multinomial.py`: alias method sampling
+    - `nce/index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
+    - `nce/index_gru.py`: an index module used by NCE, as a replacement for the whole language model module
+- `sample.py`: a simple script for NCE linear.
 - `vocab.py`: a wrapper for vocabulary object
-- `index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
-- `index_gru.py`: an index module used by NCE, as a replacement for the whole language model module
 - `model.py`: the wrapper of all `nn.Module`s.
 - `generic_model.py`: the model wrapper for index_gru NCE module
 - `main.py`: entry point
