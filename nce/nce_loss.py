@@ -31,9 +31,8 @@ class NCELoss(nn.Module):
         noise_ratio: $\frac{#noises}{#real data samples}$ (k in paper)
         norm_term: the normalization term (lnZ in paper), can be heuristically
         determined by the number of classes, plz refer to the code.
-        size_average: average the loss by batch size
-        reduce: returned the loss for each target_idx if True,
-        this will ignore the value of `size_average`
+        reduction: reduce methods, same with pytorch's loss framework, 'none',
+        'elementwise_mean' and 'sum' are supported.
         loss_type: loss type of this module, currently 'full', 'sampled', 'nce'
         are supported
 
@@ -47,10 +46,8 @@ class NCELoss(nn.Module):
         args&kwargs: extra arguments passed to underlying index module
 
     Return:
-        loss: if `reduce=False` the scalar NCELoss Variable ready for backward,
+        loss: if `reduction='sum' or 'elementwise_mean'` the scalar NCELoss Variable ready for backward,
         else the loss matrix for every individual targets.
-
-    Shape:
     """
 
     def __init__(self,
