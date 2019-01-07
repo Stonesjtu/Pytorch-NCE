@@ -13,6 +13,7 @@ UNK = '<unk>'  # unknown word
 BOS = '<s>'  # sentence start
 EOS = '</s>'  # sentence end
 
+
 def _default_unk_index():
     return 0
 
@@ -44,7 +45,6 @@ def write_freq(counter, freq_file):
             f.writelines('{} {}\n'.format(word, freq))
 
 
-
 class Vocab(object):
     """Defines a vocabulary object that will be used to numericalize a field.
     Attributes:
@@ -52,7 +52,8 @@ class Vocab(object):
             in the data used to build the Vocab.
         word2idx: A collections.defaultdict instance mapping token strings to
             numerical identifiers.
-        idx2word: A list of token strings indexed by their numerical identifiers.
+        idx2word: A list of token strings indexed by their numerical
+        identifiers.
     """
     def __init__(self, counter, max_size=None, min_freq=1):
         """Create a Vocab object from a collections.Counter.
@@ -69,7 +70,6 @@ class Vocab(object):
         self.min_freq = min_freq
         self.specials = [UNK, BOS, EOS]
         self.build()
-
 
     def build(self, force_vocab=[]):
         """Build the required vocabulary according to attributes
@@ -116,8 +116,8 @@ class Vocab(object):
         self.idx2count = [self.freqs[word] for word in self.idx2word]
         # set the frequencies for special tokens by miracle trial
         self.idx2count[0] += unk_freq  # <unk>
-        self.idx2count[1] = 0  # <s>
-        self.idx2count[2] = self.freqs['</s>']  # </s>
+        self.idx2count[1] = self.freqs['<s>']  # <s>
+        self.idx2count[2] = 0  # </s>
 
     def __eq__(self, other):
         if self.freqs != other.freqs:
