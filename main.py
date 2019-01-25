@@ -65,7 +65,7 @@ def build_model():
     # setting up NCELoss modules
     if args.index_module == 'linear':
         criterion = IndexLinear(
-            args.nhid,
+            args.emsize,
             ntoken,
             noise=noise,
             noise_ratio=args.noise_ratio,
