@@ -12,6 +12,8 @@ class RNNModel(nn.Module):
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.rnn = nn.LSTM(ninp, nhid, nlayers, dropout=dropout, batch_first=True)
+        # Usually we use the same # dim in both input and output embedding
+        self.proj = nn.Linear(nhid, ninp)
 
         self.nhid = nhid
         self.nlayers = nlayers
@@ -27,6 +29,7 @@ class RNNModel(nn.Module):
         '''Serves as the encoder and recurrent layer'''
         emb = self.drop(self.encoder(input))
         output, unused_hidden = self.rnn(emb)
+        output = self.proj(output)
         output = self.drop(output)
         return output
 
