@@ -38,7 +38,7 @@ corpus = data.Corpus(
     vocab_path=args.vocab,
     batch_size=args.batch_size,
     shuffle=True,
-    pin_memory=args.cuda,
+    pin_memory=False,
     min_freq=args.min_freq,
     concat=args.concat,
     bptt=args.bptt,
@@ -108,21 +108,17 @@ sep_target = args.index_module == 'linear'
 
 
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    optimizer = optim.SGD(
-        params=model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay
-    )
     # Turn on training mode which enables dropout.
     model.train()
     model.criterion.loss_type = args.loss
     total_loss = 0
     pbar = tqdm(data_source, desc='Training PPL: ....')
+    hid = None
     for num_batch, data_batch in enumerate(pbar):
+        # hid = None
         optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = model(data, target, length)
+        loss, hid = model(data, target, length, hid)
         loss.backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
@@ -154,11 +150,13 @@ def evaluate(model, data_source, cuda=args.cuda):
     eval_loss = 0
     total_length = 0
 
+    hid = None
     with torch.no_grad():
         for data_batch in data_source:
+            # hid = None
             data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
 
-            loss = model(data, target, length)
+            loss, hid = model(data, target, length, hid)
             cur_length = int(length.data.sum())
             eval_loss += loss.item() * cur_length
             total_length += cur_length
@@ -191,12 +189,46 @@ def run_epoch(epoch, lr, best_val_ppl):
         lr /= args.lr_decay
     return lr, best_val_ppl
 
+class MixAdam():
+    def __init__(self, model, lr=0.001, weight_decay=1e-8, max_iter=1600000):
+        self.dense_adam = optim.Adam(
+                params=list(model.rnn.parameters())+list(model.proj.parameters()) + list(model.criterion.bias.parameters()),
+                # weight_decay=weight_decay,
+                lr=lr,
+                )
+        self.sparse_adam = optim.SparseAdam(
+                params=list(model.encoder.parameters()) + list(model.criterion.emb.parameters()),
+                lr=lr,
+                )
+        self.max_iter = max_iter
+        self.lr = lr
+        self.lr_decay_step = lr / max_iter
+
+    def step(self):
+        self.dense_adam.step()
+        self.sparse_adam.step()
+        self.dense_adam.param_groups[0]['lr'] -= self.lr_decay_step
+        self.sparse_adam.param_groups[0]['lr'] -= self.lr_decay_step
+
+    def zero_grad(self):
+        self.dense_adam.zero_grad()
+        self.sparse_adam.zero_grad()
+
 if __name__ == '__main__':
+    # model = torch.load(model_path + '.epoch_{}'.format(1))
+    # logger.warning('loaded epoch 1')
     lr = args.lr
     best_val_ppl = None
     if args.train:
         # At any point you can hit Ctrl + C to break out of training early.
         try:
+            optimizer = optim.Adagrad(
+                params=model.parameters(),
+                lr=0.03,
+                # momentum=0.9,
+                # weight_decay=args.weight_decay,
+            )
+            optimizer = MixAdam(model, lr=lr)
             for epoch in range(1, args.epochs + 1):
                 lr, best_val_ppl = run_epoch(epoch, lr, best_val_ppl)
                 if args.prof:

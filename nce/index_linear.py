@@ -29,7 +29,7 @@ class IndexLinear(NCELoss):
         super(IndexLinear, self).__init__(*args, **kwargs)
         # use Embedding to store the output embedding
         # it's efficient when it comes sparse update of gradients
-        self.emb = nn.Embedding(num_classes, embedding_dim)
+        self.emb = nn.Embedding(num_classes, embedding_dim, sparse=True)
         # self.bias = nn.Parameter(torch.Tensor(num_classes))
         self.bias = nn.Embedding(num_classes, 1)
         self.reset_parameters()

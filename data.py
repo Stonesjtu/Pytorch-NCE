@@ -2,6 +2,7 @@
 
 import os
 
+import numpy as np
 import torch
 from torch.utils.data.dataset import Dataset
 from torch.utils.data.dataloader import DataLoader
@@ -82,6 +83,39 @@ class ContLMDataset(LMDataset):
         return len(self.data) // self.bptt
 
 
+class ConcatLMDataset(LMDataset):
+    """Dataset that concat the sentence and do not shuffle"""
+    def __init__(self, file_path, batch_size, vocab=None, bptt=35):
+        self.batch_size = batch_size
+        super().__init__(file_path, vocab, bptt)
+
+    def tokenize(self, path):
+        assert os.path.exists(path)
+
+        cache_data_path = path+'.npy'
+        try:
+            sentences = np.load(cache_data_path)
+        except FileNotFoundError:
+            sentence_sep = [self.vocab.word2idx[BOS]]
+            with open(path, 'r') as f:
+                sentences = [self.vocab.word2idx[BOS]]
+                for sentence in tqdm(f, desc='Processing file: {}'.format(path)):
+                    sentences += [self.vocab.word2idx[w]
+                            for w in sentence.split() + sentence_sep]
+            np.save(cache_data_path, np.array(sentences))
+        # split into list of tokens
+        self.data = np.array_split(sentences, self.batch_size)
+        self.size = sum([d.size for d in self.data])
+
+    def __getitem__(self, index):
+        batch_idx = index % self.batch_size
+        seg_idx = index * self.bptt // self.batch_size
+        return self.data[batch_idx][seg_idx:seg_idx + self.bptt + 1]
+
+    def __len__(self):
+        return self.size // self.bptt
+
+
 def pad_collate_fn(batch):
     """Pad the list of word indexes into 2-D LongTensor"""
     length = [len(sentence) for sentence in batch]
@@ -94,6 +128,7 @@ class Corpus(object):
                  concat=False, bptt=35):
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.shuffle = False
         self.pin_memory = pin_memory
         self.base_path = path
         self.update_vocab = update_vocab
@@ -106,16 +141,20 @@ class Corpus(object):
             self.vocab.idx2count[1] = self.vocab.freqs[BOS]  # <s>
             self.vocab.idx2count[2] = 0  # </s>
 
+        # self.train = self.get_dataloader('train.txt', self.batch_size)
         self.train = self.get_dataloader('train.txt', self.batch_size)
-        self.valid = self.get_dataloader('valid.txt', 1)
-        self.test = self.get_dataloader('test.txt', 1)
+        self.valid = self.get_dataloader('valid.txt', 32)
+        self.test = self.get_dataloader('test.txt', 32)
 
     def get_dataloader(self, filename, bs=1):
         full_path = os.path.join(self.base_path, filename)
+        dataset = ConcatLMDataset(full_path, bs, vocab=self.vocab, bptt=self.bptt)
         if self.concat:
-            dataset = ContLMDataset(full_path, vocab=self.vocab, bptt=self.bptt)
+            pass
+            # dataset = ContLMDataset(full_path, vocab=self.vocab, bptt=self.bptt)
         else:
-            dataset = LMDataset(full_path, vocab=self.vocab, bptt=self.bptt)
+            pass
+            # dataset = LMDataset(full_path, vocab=self.vocab, bptt=self.bptt)
         return DataLoader(
             dataset=dataset,
             batch_size=bs,
@@ -124,5 +163,5 @@ class Corpus(object):
             collate_fn=pad_collate_fn,
             # num_workers=1,
             # waiting for a new torch version to support
-            # drop_last=True,
+            drop_last=True,
         )
