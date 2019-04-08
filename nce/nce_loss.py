@@ -163,10 +163,8 @@ class NCELoss(nn.Module):
         MIN_PROB = 1e-9  # a minimal probability for numerical stability
         target_score, noise_score = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
-        target_prob = target_score.sub(self.norm_term).exp()
-        target_prob.data.clamp_(MIN_PROB, 1)
-        noise_prob = noise_score.sub(self.norm_term).exp()
-        noise_prob.data.clamp_(MIN_PROB, 1)
+        target_prob = target_score.sub(self.norm_term).clamp_max(20).exp()
+        noise_prob = noise_score.sub(self.norm_term).clamp_max(20).exp()
         return target_prob, noise_prob
 
     def get_score(self, target_idx, noise_idx, *args, **kwargs):
@@ -207,8 +205,8 @@ class NCELoss(nn.Module):
             - loss: a mis-classification loss for every single case
         """
 
-        p_model = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2)
-        p_noise = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2)
+        p_model = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).clamp(BACKOFF_PROB, 1)
+        p_noise = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).clamp(BACKOFF_PROB, 1)
 
         # predicted probability of the word comes from true data distribution
         p_true = p_model / (p_model + self.noise_ratio * p_noise)
@@ -223,8 +221,8 @@ class NCELoss(nn.Module):
 
     def sampled_softmax_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
         """Compute the sampled softmax loss based on the tensorflow's impl"""
-        logits = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).log()
-        q_logits = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).log()
+        logits = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).clamp_min(BACKOFF_PROB).log()
+        q_logits = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).clamp_min(BACKOFF_PROB).log()
         # subtract Q for correction of biased sampling
         logits = logits - q_logits
         labels = torch.zeros_like(logits.narrow(2, 0, 1)).squeeze(2).long()
