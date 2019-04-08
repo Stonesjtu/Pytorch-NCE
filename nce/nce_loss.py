@@ -7,6 +7,9 @@ import torch.nn as nn
 from torch.autograd import Variable
 from .alias_multinomial import AliasMultinomial
 
+# A backoff probability to stabilize log operation
+BACKOFF_PROB = 1e-10
+
 
 class NCELoss(nn.Module):
     """Noise Contrastive Estimation
@@ -160,7 +163,6 @@ class NCELoss(nn.Module):
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        MIN_PROB = 1e-9  # a minimal probability for numerical stability
         target_score, noise_score = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
         target_prob = target_score.sub(self.norm_term).clamp_max(20).exp()
