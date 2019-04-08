@@ -62,6 +62,7 @@ def build_model():
         torch.FloatTensor(corpus.vocab.idx2count)
     )
 
+    norm_term = 'auto' if args.norm_term == -1 else args.norm_term
     # setting up NCELoss modules
     if args.index_module == 'linear':
         criterion = IndexLinear(
@@ -69,7 +70,7 @@ def build_model():
             ntoken,
             noise=noise,
             noise_ratio=args.noise_ratio,
-            norm_term=args.norm_term,
+            norm_term=norm_term,
             loss_type=args.loss,
             reduction='none',
         )
@@ -85,7 +86,7 @@ def build_model():
             args.dropout,
             noise=noise,
             noise_ratio=args.noise_ratio,
-            norm_term=args.norm_term,
+            norm_term=norm_term,
         )
         model = GenModel(
             criterion=nce_criterion,

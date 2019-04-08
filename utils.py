@@ -55,7 +55,7 @@ def setup_parser():
     parser.add_argument('--noise-ratio', type=int, default=50,
                         help='set the noise ratio of NCE sampling, the noise'
                         ' is shared among batch')
-    parser.add_argument('--norm-term', type=int, default=9,
+    parser.add_argument('--norm-term', type=int, default=-1,
                         help='set the log normalization term of NCE sampling')
     parser.add_argument('--train', action='store_true',
                         help='set train mode, otherwise only evaluation is'
