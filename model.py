@@ -20,6 +20,9 @@ class RNNModel(nn.Module):
         self.criterion = criterion
 
         self.reset_parameters()
+        self.layers = []
+        self.layers.append(Layer1(self.drop, self.encoder, self.rnn, self.proj))
+        self.layers.append(Layer2(self.criterion))
 
     def reset_parameters(self):
         init_range = 0.1
@@ -38,6 +41,40 @@ class RNNModel(nn.Module):
 
         mask = get_mask(length.data, max_len=input.size(1))
         rnn_output = self._rnn(input)
+        loss = self.criterion(target, rnn_output)
+        loss = torch.masked_select(loss, mask)
+
+        return loss.mean()
+
+
+class Layer1(nn.Module):
+
+    def __init__(self, drop, encoder, rnn, proj):
+        super().__init__()
+        self.drop = drop
+        self.encoder = encoder
+        self.rnn = rnn
+        self.proj = proj
+
+    def forward(self, input, target, length):
+
+        emb = self.drop(self.encoder(input))
+        output, unused_hidden = self.rnn(emb)
+        output = self.proj(output)
+        output = self.drop(output)
+        return output
+
+
+class Layer2(nn.Module):
+
+    def __init__(self, criterion):
+        super().__init__()
+        self.criterion = criterion
+
+    def forward(self, input, target, length):
+
+        mask = get_mask(length.data, max_len=input.size(1))
+        rnn_output = input
         loss = self.criterion(target, rnn_output)
         loss = torch.masked_select(loss, mask)
 

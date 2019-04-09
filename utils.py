@@ -158,3 +158,29 @@ def build_unigram_noise(freq):
     noise = freq / total
     assert abs(noise.sum() - 1) < 0.001
     return noise
+import torch
+import torch.distributed as dist
+from collections import deque
+
+MAX_NUM_DIM = 3
+
+class ArbTrans(object):
+    """Receive an arbitrary tensor from source"""
+
+    @staticmethod
+    def recv(src):
+        size = torch.IntTensor(MAX_NUM_DIM)
+        dist.recv(size, src=src)
+        out = torch.Tensor(size=list(size))
+        dist.recv(out, src=src)
+        return out
+
+    @staticmethod
+    def send(tensor_in, dst):
+        size = torch.IntTensor(MAX_NUM_DIM)
+        real_size = list(tensor_in.size())
+        size[:len(real_size)] = torch.IntTensor(real_size)
+        dist.send(size, dst=dst)
+        dist.send(tensor_in, dst=dst)
+
+
