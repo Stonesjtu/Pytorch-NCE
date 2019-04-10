@@ -22,6 +22,7 @@ class RNNModel(nn.Module):
         self.reset_parameters()
         self.layers = []
         self.layers.append(Layer1(self.drop, self.encoder, self.rnn, self.proj))
+        self.layers.append(nn.Sequential(self.proj, self.drop))
         self.layers.append(Layer2(self.criterion))
 
     def reset_parameters(self):
@@ -54,14 +55,11 @@ class Layer1(nn.Module):
         self.drop = drop
         self.encoder = encoder
         self.rnn = rnn
-        self.proj = proj
 
     def forward(self, input, target, length):
 
         emb = self.drop(self.encoder(input))
         output, unused_hidden = self.rnn(emb)
-        output = self.proj(output)
-        output = self.drop(output)
         return output
 
 

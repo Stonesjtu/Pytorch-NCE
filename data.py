@@ -124,5 +124,5 @@ class Corpus(object):
             collate_fn=pad_collate_fn,
             # num_workers=1,
             # waiting for a new torch version to support
-            # drop_last=True,
+            drop_last=True,
         )

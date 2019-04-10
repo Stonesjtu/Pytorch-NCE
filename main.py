@@ -50,7 +50,7 @@ logger.info('Vocabulary size is {}'.format(ntoken))
 ################################################################## Build the criterion and model, setup the NCE module
 #################################################################
 
-def build_model():
+def build_model(use_pipe=True):
     """Build the model according to CLI arguments
 
     Global Dependencies:
@@ -78,9 +78,10 @@ def build_model():
             ntoken, args.emsize, args.nhid, args.nlayers,
             criterion=criterion, dropout=args.dropout,
         )
-        from pipeline_model import Pipeline
-        model = Pipeline(model.layers)
-        torch.cuda.set_device(model.rank)
+        if use_pipe:
+            from pipeline_model import Pipeline
+            model = Pipeline(model.layers)
+            torch.cuda.set_device(model.rank)
     elif args.index_module == 'gru':
         if args.nlayers != 1:
             logger.warning('Falling into one layer GRU due to Index_GRU supporting')
@@ -110,30 +111,38 @@ sep_target = args.index_module == 'linear'
 # Training code
 #################################################################
 
+optimizer = optim.Adam(
+    params=model.parameters(),
+    lr=1e-3,
+    # momentum=momentum,
+    # weight_decay=weight_decay
+)
 
 def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
-    optimizer = optim.SGD(
-        params=model.parameters(),
-        lr=lr,
-        momentum=momentum,
-        weight_decay=weight_decay
-    )
     # Turn on training mode which enables dropout.
     model.train()
     # model.criterion.loss_type = args.loss
     total_loss = 0
-    pbar = tqdm(data_source, desc='Training PPL: ....', disable = model.rank == 0)
+    pbar = tqdm(data_source, desc='Training PPL: ....', disable = model.rank != model.world_size - 1)
+    num_batch = len(pbar)
+    model.set_num_batch(num_batch)
+    model.reset()
+    torch.manual_seed(epoch)
     for num_batch, data_batch in enumerate(pbar):
-        optimizer.zero_grad()
         data, target, length = process_data(data_batch, cuda=args.cuda, sep_target=sep_target)
-        loss = model(data, target, length)
-        # loss.backward()
+        if model.rank == 0:
+            loss = model(data, target, length)
+        elif model.rank == model.world_size - 1:
+            loss = model(None, target, length)
+        else:
+            loss = model(None)
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
         optimizer.step()
+        optimizer.zero_grad()
 
-        if model.rank == 1:
+        if model.rank == model.world_size - 1:
             total_loss += loss.item()
 
             if args.prof:
@@ -153,8 +162,15 @@ def train(model, data_source, epoch, lr=1.0, weight_decay=1e-5, momentum=0.9):
 
 def evaluate(model, data_source, cuda=args.cuda):
     # Turn on evaluation mode which disables dropout.
-    model.eval()
-    model.criterion.loss_type = 'full'
+    from model import Layer1, Layer2
+    whole_model = build_model(use_pipe=False)
+    for idx, layer in enumerate(whole_model.layers):
+        layer.load_state_dict(
+            torch.load(model_path+'.part{}'.format(idx),
+            map_location='cuda')
+        )
+    whole_model.eval()
+    whole_model.criterion.loss_type = 'full'
 
     eval_loss = 0
     total_length = 0
@@ -163,38 +179,48 @@ def evaluate(model, data_source, cuda=args.cuda):
         for data_batch in data_source:
             data, target, length = process_data(data_batch, cuda=cuda, sep_target=sep_target)
 
-            loss = model(data, target, length)
+            loss = whole_model(data, target, length)
             cur_length = int(length.data.sum())
             eval_loss += loss.item() * cur_length
             total_length += cur_length
 
-    model.criterion.loss_type = args.loss
+    whole_model.criterion.loss_type = args.loss
 
     return math.exp(eval_loss/total_length)
 
 
 def run_epoch(epoch, lr, best_val_ppl):
     """A training epoch includes training, evaluation and logging"""
+    part_name = '.part{}'.format(model.rank)
     epoch_start_time = time.time()
     train(model, corpus.train, epoch=epoch, lr=lr, weight_decay=args.weight_decay)
-    val_ppl = evaluate(model, corpus.valid)
-    logger.warning(
-        '| end of epoch {:3d} | time: {:5.2f}s |'
-        'valid ppl {:8.2f}'.format(
-            epoch,
-            (time.time() - epoch_start_time),
-            val_ppl)
-    )
-    torch.save(model, model_path + '.epoch_{}'.format(epoch))
-    # Save the model if the validation loss is the best we've seen so far.
-    if not best_val_ppl or val_ppl < best_val_ppl:
-        torch.save(model, model_path)
-        best_val_ppl = val_ppl
+    import torch.distributed as dist
+    dist.barrier()
+    torch.save(model.target_workload.state_dict(), model_path + part_name)
+    if model.rank == model.world_size - 1:
+        val_ppl = evaluate(model, corpus.valid)
+        logger.warning(
+            '| end of epoch {:3d} | time: {:5.2f}s |'
+            'valid ppl {:8.2f}'.format(
+                epoch,
+                (time.time() - epoch_start_time),
+                val_ppl)
+        )
+        # Save the model if the validation loss is the best we've seen so far.
+
+        if epoch >= 15:
+            lr /= args.lr_decay
+
+        if not best_val_ppl or val_ppl < best_val_ppl:
+            torch.save(model.target_workload.state_dict(), model_path + '-best' + part_name)
+            best_val_ppl = val_ppl
+        else:
+            # Anneal the learning rate if no improvement has been seen in the
+            # validation dataset.
+            lr /= args.lr_decay
+        return lr, best_val_ppl
     else:
-        # Anneal the learning rate if no improvement has been seen in the
-        # validation dataset.
-        lr /= args.lr_decay
-    return lr, best_val_ppl
+        return lr, 100
 
 if __name__ == '__main__':
     lr = args.lr
