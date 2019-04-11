@@ -21,8 +21,9 @@ class RNNModel(nn.Module):
 
         self.reset_parameters()
         self.layers = []
-        self.layers.append(Layer1(self.drop, self.encoder, self.rnn, self.proj))
-        self.layers.append(nn.Sequential(self.proj, self.drop))
+        self.layers.append(Layer1(self.drop, self.encoder))
+        self.layers.append(Layer3(self.rnn))
+        self.layers.append(self.proj)
         self.layers.append(Layer2(self.criterion))
 
     def reset_parameters(self):
@@ -50,17 +51,26 @@ class RNNModel(nn.Module):
 
 class Layer1(nn.Module):
 
-    def __init__(self, drop, encoder, rnn, proj):
+    def __init__(self, drop, encoder):
         super().__init__()
         self.drop = drop
         self.encoder = encoder
-        self.rnn = rnn
 
-    def forward(self, input, target, length):
+    def forward(self, input, *args):
 
         emb = self.drop(self.encoder(input))
-        output, unused_hidden = self.rnn(emb)
-        return output
+        return emb
+
+
+class Layer3(nn.Module):
+
+    def __init__(self, rnn):
+        super().__init__()
+        self.rnn = rnn
+
+    def forward(self, inp, *args):
+        rnn_output, unused_hidden = self.rnn(inp)
+        return rnn_output
 
 
 class Layer2(nn.Module):
