@@ -17,11 +17,11 @@ class NCELoss(nn.Module):
     NCE is to eliminate the computational cost of softmax
     normalization.
 
-    There are two modes in this NCELoss module:
-        - nce: enable the NCE approximtion
-        - ce: use the original cross entropy as default loss
-    They can be switched by calling function `enable_nce()` or
-    `disable_nce()`, you can also switch on/off via `nce_mode(True/False)`
+    There are 3 loss modes in this NCELoss module:
+        - nce: enable the NCE approximation
+        - sampled: enabled sampled softmax approximation
+        - full: use the original cross entropy as default loss
+    They can be switched by directly setting `nce.loss_type = 'nce'`.
 
     Ref:
         X.Chen etal Recurrent neural network language
