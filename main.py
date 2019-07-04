@@ -66,7 +66,7 @@ def build_model():
     # setting up NCELoss modules
     if args.index_module == 'linear':
         criterion = IndexLinear(
-            args.nhid,
+            args.emsize,
             ntoken,
             noise=noise,
             noise_ratio=args.noise_ratio,
@@ -82,7 +82,7 @@ def build_model():
         if args.nlayers != 1:
             logger.warning('Falling into one layer GRU due to Index_GRU supporting')
         nce_criterion = IndexGRU(
-            ntoken, args.nhid, args.nhid,
+            ntoken, args.emsize, args.nhid,
             args.dropout,
             noise=noise,
             noise_ratio=args.noise_ratio,
