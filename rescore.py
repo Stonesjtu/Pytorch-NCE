@@ -9,9 +9,8 @@ from utils import process_data
 
 
 MODEL_FILE = sys.argv[1]
-# CORPUS_PATH = '../language_model/data/swb-bpe-dp-extreme'
-CORPUS_PATH = '../language_model/data/swb-rescore'
-VOCAB_PATH = '../language_model/data/swb-bpe-tri/vocab.txt'
+CORPUS_PATH = '../dataset/swb-rescore'
+# VOCAB_PATH = '../language_model/data/swb-bpe-tri/vocab.txt'
 #################################################################
 # Load data
 #################################################################
@@ -36,7 +35,7 @@ print('sample words: ', corpus.vocab.idx2word[:10])
 data_source = corpus.test
 # Turn on evaluation mode which disables dropout.
 model.eval()
-model.criterion.loss_type = 'nce'
+model.criterion.loss_type = 'full'
 model.criterion.noise_ratio = 500
 print('Rescoring using loss: {}'.format(model.criterion.loss_type))
 
@@ -50,12 +49,12 @@ debug = False
 
 with torch.no_grad():
     for data_batch in tqdm.tqdm(data_source):
-        data, target, length = process_data(data_batch, cuda=False, sep_target=False)
+        data, target, length = process_data(data_batch, cuda=True, sep_target=True)
 
         if debug:
-            print(model(data, length.cuda()))
+            print(model(data, target, length.cuda()))
             continue
-        loss = model(data, length.cuda()).item()
+        loss = model(data, target, length.cuda()).item()
         loss *= length.sum().item()
         eval_loss += loss
         total_length += length.sum().item()
