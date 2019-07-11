@@ -74,6 +74,8 @@ class NCELoss(nn.Module):
         self.bce = nn.BCELoss(reduction='none')
         self.ce = nn.CrossEntropyLoss(reduction='none')
         self.loss_type = loss_type
+        self.self_contrasting = False
+        self.sentence_target = True
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
@@ -88,6 +90,8 @@ class NCELoss(nn.Module):
         if self.loss_type != 'full':
 
             noise_samples = self.get_noise(batch, max_len)
+            if self.self_contrasting:
+                noise_samples = target.view(-1).expand(batch, max_len, -1).contiguous()
 
             # B,N,Nr
             prob_noise = self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
@@ -95,6 +99,8 @@ class NCELoss(nn.Module):
 
             # (B,N), (B,N,Nr)
             prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
+            mask = torch.ones(max_len, device='cuda').byte().diag().unsqueeze(0).expand_as(prob_model)
+            prob_model = torch.masked_select(prob_model, mask).view_as(target)
 
             if self.loss_type == 'nce':
                 if self.training:

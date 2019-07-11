@@ -109,27 +109,35 @@ class IndexLinear(NCELoss):
         sampling methods.
 
         Args:
-            - target_idx: :math:`B, L, 1` flatten to `(N)` where `N=BXL`
+            - target_idx: :math:`B, L` will be flatten to `(N)` where `N=BXL`
             - noise_idx: :math:`B, L, N_r`, noises at the dim along B and L
             should be the same, flatten to `N_r`
             - input: :math:`(B, L, E)` where `E = vector dimension`
 
         Returns:
             - target_score: :math:`(B, L)` the computed logits of target_idx
+            if `sentence_target` is True, then target_score will be `(B, L, L)`
+            containing the probs of words in each sentence as target.
             - noise_score: :math:`(B, L, N_r)` the computed logits of noise_idx
         """
 
         original_size = target_idx.size()
-
-        # flatten the following matrix
-        input = input.contiguous().view(-1, input.size(-1))
-        target_idx = target_idx.view(-1)
         noise_idx = noise_idx[0, 0].view(-1)
 
-        target_batch = self.emb(target_idx)
-        # target_bias = self.bias.index_select(0, target_idx)  # N
-        target_bias = self.bias(target_idx).squeeze(1)  # N
-        target_score = torch.sum(input * target_batch, dim=1) + target_bias  # N X E * N X E
+        # Use efficient method for single target
+        if not self.sentence_target:
+            # flatten the following matrix
+            input = input.contiguous().view(-1, input.size(-1))
+            target_idx = target_idx.view(-1)
+
+            target_batch = self.emb(target_idx)
+            # target_bias = self.bias.index_select(0, target_idx)  # N
+            target_bias = self.bias(target_idx).squeeze(1)  # N
+            target_score = torch.sum(input * target_batch, dim=1) + target_bias # N X E * N X E
+        else:
+            target_batch = self.emb(target_idx)  # B, L, E
+            target_bias = self.bias(target_idx)  # B, L
+            target_score = torch.matmul(target_batch, input.transpose(1, 2)) + target_bias
 
         noise_batch = self.emb(noise_idx)  # Nr X H
         # noise_bias = self.bias.index_select(0, noise_idx).unsqueeze(0)  # Nr
@@ -137,7 +145,10 @@ class IndexLinear(NCELoss):
         noise_score = torch.matmul(
             input, noise_batch.t()
         ) + noise_bias.t()  # N X Nr
-        return target_score.view(original_size), noise_score.view(*original_size, -1)
+
+        target_score = target_score.view(*original_size, -1).squeeze()
+        noise_score = noise_score.view(*original_size, -1)
+        return target_score, noise_score
 
     def ce_loss(self, target_idx, input):
         score = F.linear(input, self.emb.weight, self.bias.weight.squeeze(1))  # (N, V)
