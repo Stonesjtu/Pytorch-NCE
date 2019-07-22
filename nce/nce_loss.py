@@ -4,7 +4,6 @@ import math
 
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 from .alias_multinomial import AliasMultinomial
 
 # A backoff probability to stabilize log operation
@@ -42,14 +41,14 @@ class NCELoss(nn.Module):
     Shape:
         - noise: :math:`(V)` where `V = vocabulary size`
         - target: :math:`(B, N)`
-        - loss: :math:`(B, N)` if `reduce=True`
+        - loss: a scalar loss by default, :math:`(B, N)` if `reduction='none'`
 
     Input:
         target: the supervised training label.
         args&kwargs: extra arguments passed to underlying index module
 
     Return:
-        loss: if `reduction='sum' or 'elementwise_mean'` the scalar NCELoss Variable ready for backward,
+        loss: if `reduction='sum' or 'elementwise_mean'` the scalar NCELoss ready for backward,
         else the loss matrix for every individual targets.
     """
 
@@ -91,12 +90,8 @@ class NCELoss(nn.Module):
             noise_samples = self.get_noise(batch, max_len)
 
             # B,N,Nr
-            prob_noise = Variable(
-                self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
-            )
-            prob_target_in_noise = Variable(
-                self.noise[target.data.view(-1)].view_as(target)
-            )
+            prob_noise = self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
+            prob_target_in_noise = self.noise[target.data.view(-1)].view_as(target)
 
             # (B,N), (B,N,Nr)
             prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
@@ -127,7 +122,11 @@ class NCELoss(nn.Module):
 
             else:
                 current_stage = 'training' if self.training else 'inference'
-                raise NotImplementedError('loss type {} not implemented at {}'.format(self.loss_type, current_stage))
+                raise NotImplementedError(
+                    'loss type {} not implemented at {}'.format(
+                        self.loss_type, current_stage
+                    )
+                )
 
         else:
             # Fallback into conventional cross entropy
@@ -143,16 +142,13 @@ class NCELoss(nn.Module):
     def get_noise(self, batch_size, max_len):
         """Generate noise samples from noise distribution"""
 
+        noise_size = (batch_size, max_len, self.noise_ratio)
         if self.per_word:
-            noise_samples = self.alias.draw(
-                batch_size,
-                max_len,
-                self.noise_ratio,
-            )
+            noise_samples = self.alias.draw(*noise_size)
         else:
-            noise_samples = self.alias.draw(1, 1, self.noise_ratio).expand(batch_size, max_len, self.noise_ratio)
+            noise_samples = self.alias.draw(1, 1, self.noise_ratio).expand(*noise_size)
 
-        noise_samples = Variable(noise_samples).contiguous()
+        noise_samples = noise_samples.contiguous()
         return noise_samples
 
     def _get_prob(self, target_idx, noise_idx, *args, **kwargs):

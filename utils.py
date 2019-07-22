@@ -3,7 +3,6 @@ import logging
 import argparse
 
 import torch
-from torch.autograd import Variable
 
 
 def setup_parser():
@@ -103,11 +102,11 @@ def get_mask(lengths, cut_tail=0, max_len=None):
             .type_as(lengths)
             .repeat(batch_size, 1)
             .lt(lengths.unsqueeze(1)))
-    return Variable(mask)
+    return mask
 
 
 def process_data(data_batch, cuda=False, sep_target=True):
-    """A data pre-processing util which construct the input `Variable` for model
+    """A data pre-processing util which construct the input `Tensor` for model
 
     Args:
         - data_batch: a batched data from `PaddedDataset`
@@ -139,9 +138,9 @@ def process_data(data_batch, cuda=False, sep_target=True):
         data = batch_sentence
         target = batch_sentence
 
-    data = Variable(data.contiguous())
-    target = Variable(target.contiguous(), requires_grad=False)
-    effective_length = Variable(effective_length)
+    data = data.contiguous()
+    target = target.contiguous()
+    effective_length = effective_length
 
     return data, target, effective_length
 
