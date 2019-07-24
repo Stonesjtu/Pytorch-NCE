@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from .nce_loss import NCELoss
 
+
 class IndexLinear(NCELoss):
     """A linear layer that only decodes the results of provided indices
 
@@ -39,8 +40,9 @@ class IndexLinear(NCELoss):
         self.emb.weight.data.uniform_(-stdv, stdv)
         if self.bias is not None:
             # initialize the bias with unigram instead of uniform
-            self.bias.weight.data = torch.log(self.noise + 1e-10) + self.norm_term
-            self.bias.weight.data.unsqueeze_(1)
+            self.bias.weight.data = torch.unsqueeze(
+                torch.log(self.noise + 1e-10) + self.norm_term, 1
+            )
 
     def get_score(self, target_idx, noise_idx, input):
         """
@@ -127,7 +129,7 @@ class IndexLinear(NCELoss):
         target_batch = self.emb(target_idx)
         # target_bias = self.bias.index_select(0, target_idx)  # N
         target_bias = self.bias(target_idx).squeeze(1)  # N
-        target_score = torch.sum(input * target_batch, dim=1) + target_bias # N X E * N X E
+        target_score = torch.sum(input * target_batch, dim=1) + target_bias  # N X E * N X E
 
         noise_batch = self.emb(noise_idx)  # Nr X H
         # noise_bias = self.bias.index_select(0, noise_idx).unsqueeze(0)  # Nr
@@ -136,7 +138,6 @@ class IndexLinear(NCELoss):
             input, noise_batch.t()
         ) + noise_bias.t()  # N X Nr
         return target_score.view(original_size), noise_score.view(*original_size, -1)
-
 
     def ce_loss(self, target_idx, input):
         score = F.linear(input, self.emb.weight, self.bias.weight.squeeze(1))  # (N, V)
