@@ -51,11 +51,16 @@ class MultiTarget(IndexLinear):
 
         Returns:
             - log_softmax: `(B, T, L+N_r)` approximation of the full log_softmax"""
+        max_len = prob_model.size(2)
         logits = torch.cat([prob_model, prob_noise_in_model], dim=2).clamp_min(BACKOFF_PROB).log()
         q_logits = torch.cat([prob_target_in_noise, prob_noise], dim=2).clamp_min(BACKOFF_PROB).log()
         # subtract Q for correction of biased sampling
         logits = logits - q_logits
-        return F.log_softmax(logits, dim=2)
+        # target: B,T,L | noise: B,T,N_r
+        target_logits, noise_logits = logits[:max_len], logits[max_len:]
+        partition_noise = noise_logits.exp().sum(dim=-1, keepdim=True)  # B, T
+        target_prob = target_logits.exp() / target_logits.exp() + partition_noise
+        return F.log_softmax(logits[max_len:], dim=2)
 
     def _compute_sampled_logit_batched(self, target_idx, noise_idx, input):
         """compute the logits of given indices based on input vector
