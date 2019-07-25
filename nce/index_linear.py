@@ -124,20 +124,14 @@ class IndexLinear(NCELoss):
         original_size = target_idx.size()
         noise_idx = noise_idx[0, 0].view(-1)
 
-        # Use efficient method for single target
-        if not self.sentence_target:
-            # flatten the following matrix
-            input = input.contiguous().view(-1, input.size(-1))
-            target_idx = target_idx.view(-1)
+        # flatten the following matrix
+        input = input.contiguous().view(-1, input.size(-1))
+        target_idx = target_idx.view(-1)
 
-            target_batch = self.emb(target_idx)
-            # target_bias = self.bias.index_select(0, target_idx)  # N
-            target_bias = self.bias(target_idx).squeeze(1)  # N
-            target_score = torch.sum(input * target_batch, dim=1) + target_bias # N X E * N X E
-        else:
-            target_batch = self.emb(target_idx)  # B, L, E
-            target_bias = self.bias(target_idx)  # B, L
-            target_score = torch.matmul(target_batch, input.transpose(1, 2)) + target_bias
+        target_batch = self.emb(target_idx)
+        # target_bias = self.bias.index_select(0, target_idx)  # N
+        target_bias = self.bias(target_idx).squeeze(1)  # N
+        target_score = torch.sum(input * target_batch, dim=1) + target_bias # N X E * N X E
 
         noise_batch = self.emb(noise_idx)  # Nr X H
         # noise_bias = self.bias.index_select(0, noise_idx).unsqueeze(0)  # Nr

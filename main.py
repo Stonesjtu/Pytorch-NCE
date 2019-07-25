@@ -64,8 +64,9 @@ def build_model():
 
     norm_term = 'auto' if args.norm_term == -1 else args.norm_term
     # setting up NCELoss modules
+    from nce.multi_target import MultiTarget
     if args.index_module == 'linear':
-        criterion = IndexLinear(
+        criterion = MultiTarget(
             args.emsize,
             ntoken,
             noise=noise,

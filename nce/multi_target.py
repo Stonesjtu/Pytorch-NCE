@@ -21,29 +21,29 @@ class MultiTarget(IndexLinear):
             - input: `(B, T, H)`
         """
 
-        input = input.repeat(1, 3, 1)
-        batch = input.size(0)
-        max_len = input.size(1)
-        label_len = target.size(1)
+        if self.loss_type == 'sampled':
+            batch = input.size(0)
+            max_len = input.size(1)
+            label_len = target.size(1)
 
-        noise_samples = self.get_noise(batch, max_len)
-        # noise_samples = target.view(-1).expand(batch, max_len, -1).contiguous()
+            noise_samples = self.get_noise(batch, max_len)
+            # noise_samples = target.view(-1).expand(batch, max_len, -1).contiguous()
 
-        # B,N,Nr
-        prob_noise = Variable(
-            self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
-        )
-        prob_target_in_noise = Variable(
-            self.noise[target.data.view(-1)].view_as(target).unsqueeze(1).repeat(1, max_len, 1)
-        )
-        print(prob_target_in_noise.size())
+            # B,N,Nr
+            prob_noise = Variable(
+                self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
+            )
+            prob_target_in_noise = Variable(
+                self.noise[target.data.view(-1)].view_as(target).unsqueeze(1).repeat(1, max_len, 1)
+            )
+            # print(prob_target_in_noise.size())
 
-        # (B,N), (B,N,Nr)
-        prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, input)
-        out = self.sampled_log_softmax(prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise)
-        target_out = out[..., :label_len]
-        import ipdb
-        ipdb.set_trace()
+            # (B,N), (B,N,Nr)
+            prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, input)
+            out = self.sampled_log_softmax(prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise)
+            target_out = out.diagonal(0, dim1=-2, dim2=-1)
+        elif self.loss_type == 'full':
+            return self.ce_loss(target, input)
         return target_out
 
     def sampled_log_softmax(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
@@ -57,10 +57,14 @@ class MultiTarget(IndexLinear):
         # subtract Q for correction of biased sampling
         logits = logits - q_logits
         # target: B,T,L | noise: B,T,N_r
-        target_logits, noise_logits = logits[:max_len], logits[max_len:]
-        partition_noise = noise_logits.exp().sum(dim=-1, keepdim=True)  # B, T
-        target_prob = target_logits.exp() / target_logits.exp() + partition_noise
-        return F.log_softmax(logits[max_len:], dim=2)
+        target_logits, noise_logits = logits[..., :max_len], logits[..., max_len:]
+        noise_likelihood = noise_logits.exp().sum(dim=-1, keepdim=True)  # B, T
+        target_likelihood = target_logits.exp()
+        target_prob = target_likelihood / (target_likelihood + noise_likelihood)
+        import ipdb
+        # ipdb.set_trace()
+        return -target_prob.log()
+        # return F.log_softmax(logits[max_len:], dim=2)
 
     def _compute_sampled_logit_batched(self, target_idx, noise_idx, input):
         """compute the logits of given indices based on input vector

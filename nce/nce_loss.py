@@ -75,7 +75,6 @@ class NCELoss(nn.Module):
         self.ce = nn.CrossEntropyLoss(reduction='none')
         self.loss_type = loss_type
         self.self_contrasting = False
-        self.sentence_target = True
 
     def forward(self, target, *args, **kwargs):
         """compute the loss with output and the desired target
