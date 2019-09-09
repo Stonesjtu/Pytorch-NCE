@@ -1,3 +1,5 @@
+from math import isclose
+
 import torch
 
 class AliasMultinomial(torch.nn.Module):
@@ -16,7 +18,7 @@ class AliasMultinomial(torch.nn.Module):
     def __init__(self, probs):
         super(AliasMultinomial, self).__init__()
 
-        probs = probs / probs.sum()
+        assert isclose(probs.sum().item(), 1), 'The noise distribution must sum to 1'
         cpu_probs = probs.cpu()
         K = len(probs)
 

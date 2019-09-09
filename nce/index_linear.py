@@ -41,7 +41,7 @@ class IndexLinear(NCELoss):
         if self.bias is not None:
             # initialize the bias with unigram instead of uniform
             self.bias.weight.data = torch.unsqueeze(
-                torch.log(self.noise + 1e-10) + self.norm_term, 1
+                self.logprob_noise + self.norm_term, 1
             )
 
     def get_score(self, target_idx, noise_idx, input):

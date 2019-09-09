@@ -62,8 +62,15 @@ class NCELoss(nn.Module):
                  ):
         super(NCELoss, self).__init__()
 
-        self.register_buffer('noise', noise)
-        self.alias = AliasMultinomial(noise)
+        # Re-norm the given noise frequency list and compensate words with
+        # extremely low prob for numeric stability
+        probs = noise / noise.sum()
+        probs = probs.clamp(min=BACKOFF_PROB)
+        renormed_probs = probs / probs.sum()
+
+        self.register_buffer('logprob_noise', renormed_probs.log())
+        self.alias = AliasMultinomial(renormed_probs)
+
         self.noise_ratio = noise_ratio
         if norm_term == 'auto':
             self.norm_term = math.log(noise.numel())
@@ -71,7 +78,7 @@ class NCELoss(nn.Module):
             self.norm_term = norm_term
         self.reduction = reduction
         self.per_word = per_word
-        self.bce = nn.BCELoss(reduction='none')
+        self.bce_with_logits = nn.BCEWithLogitsLoss(reduction='none')
         self.ce = nn.CrossEntropyLoss(reduction='none')
         self.loss_type = loss_type
 
@@ -90,34 +97,35 @@ class NCELoss(nn.Module):
             noise_samples = self.get_noise(batch, max_len)
 
             # B,N,Nr
-            prob_noise = self.noise[noise_samples.data.view(-1)].view_as(noise_samples)
-            prob_target_in_noise = self.noise[target.data.view(-1)].view_as(target)
+            logit_noise_in_noise = self.logprob_noise[noise_samples.data.view(-1)].view_as(noise_samples)
+            logit_target_in_noise = self.logprob_noise[target.data.view(-1)].view_as(target)
 
             # (B,N), (B,N,Nr)
-            prob_model, prob_noise_in_model = self._get_prob(target, noise_samples, *args, **kwargs)
+            logit_target_in_model, logit_noise_in_model = self._get_logit(target, noise_samples, *args, **kwargs)
 
             if self.loss_type == 'nce':
                 if self.training:
                     loss = self.nce_loss(
-                        prob_model, prob_noise_in_model,
-                        prob_noise, prob_target_in_noise,
+                        logit_target_in_model, logit_noise_in_model,
+                        logit_noise_in_noise, logit_target_in_noise,
                     )
                 else:
                     # directly output the approximated posterior
-                    loss = - prob_model.log()
+                    loss = - logit_target_in_model
             elif self.loss_type == 'sampled':
                 loss = self.sampled_softmax_loss(
-                    prob_model, prob_noise_in_model,
-                    prob_noise, prob_target_in_noise,
+                    logit_target_in_model, logit_noise_in_model,
+                    logit_noise_in_noise, logit_target_in_noise,
                 )
+            # NOTE: The mix mode is still under investigation
             elif self.loss_type == 'mix' and self.training:
                 loss = 0.5 * self.nce_loss(
-                    prob_model, prob_noise_in_model,
-                    prob_noise, prob_target_in_noise,
+                    logit_target_in_model, logit_noise_in_model,
+                    logit_noise_in_noise, logit_target_in_noise,
                 )
                 loss += 0.5 * self.sampled_softmax_loss(
-                    prob_model, prob_noise_in_model,
-                    prob_noise, prob_target_in_noise,
+                    logit_target_in_model, logit_noise_in_model,
+                    logit_noise_in_noise, logit_target_in_noise,
                 )
 
             else:
@@ -151,23 +159,27 @@ class NCELoss(nn.Module):
         noise_samples = noise_samples.contiguous()
         return noise_samples
 
-    def _get_prob(self, target_idx, noise_idx, *args, **kwargs):
-        """Get the NCE estimated probability for target and noise
+    def _get_logit(self, target_idx, noise_idx, *args, **kwargs):
+        """Get the logits of NCE estimated probability for target and noise
+
+        Both NCE and sampled softmax Loss are unchanged when the probabilities are scaled
+        evenly, here we subtract the maximum value as in softmax, for numeric stability.
 
         Shape:
             - Target_idx: :math:`(N)`
             - Noise_idx: :math:`(N, N_r)` where `N_r = noise ratio`
         """
 
-        target_score, noise_score = self.get_score(target_idx, noise_idx, *args, **kwargs)
+        target_logit, noise_logit = self.get_score(target_idx, noise_idx, *args, **kwargs)
 
-        target_prob = target_score.sub(self.norm_term).clamp_max(20).exp()
-        noise_prob = noise_score.sub(self.norm_term).clamp_max(20).exp()
-        return target_prob, noise_prob
+        target_logit = target_logit.sub(self.norm_term)
+        noise_logit = noise_logit.sub(self.norm_term)
+        return target_logit, noise_logit
 
     def get_score(self, target_idx, noise_idx, *args, **kwargs):
-        """Get the target and noise scores given input
+        """Get the target and noise score
 
+        Usually logits are used as score.
         This method should be override by inherit classes
 
         Returns:
@@ -190,37 +202,41 @@ class NCELoss(nn.Module):
         """
         raise NotImplementedError()
 
-    def nce_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
+    def nce_loss(self, logit_target_in_model, logit_noise_in_model, logit_noise_in_noise, logit_target_in_noise):
         """Compute the classification loss given all four probabilities
 
         Args:
-            - prob_model: probability of target words given by the model (RNN)
-            - prob_noise_in_model: probability of noise words given by the model
-            - prob_noise: probability of noise words given by the noise distribution
-            - prob_target_in_noise: probability of target words given by the noise distribution
+            - logit_target_in_model: logit of target words given by the model (RNN)
+            - logit_noise_in_model: logit of noise words given by the model
+            - logit_noise_in_noise: logit of noise words given by the noise distribution
+            - logit_target_in_noise: logit of target words given by the noise distribution
 
         Returns:
             - loss: a mis-classification loss for every single case
         """
 
-        p_model = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).clamp(BACKOFF_PROB, 1)
-        p_noise = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).clamp(BACKOFF_PROB, 1)
+        # NOTE: prob <= 1 is not guaranteed
+        logit_model = torch.cat([logit_target_in_model.unsqueeze(2), logit_noise_in_model], dim=2)
+        logit_noise = torch.cat([logit_target_in_noise.unsqueeze(2), logit_noise_in_noise], dim=2)
 
         # predicted probability of the word comes from true data distribution
-        p_true = p_model / (p_model + self.noise_ratio * p_noise)
-        label = torch.cat(
-            [torch.ones_like(prob_model).unsqueeze(2),
-             torch.zeros_like(prob_noise)], dim=2
-        )
+        # The posterior can be computed as following
+        # p_true = logit_model.exp() / (logit_model.exp() + self.noise_ratio * logit_noise.exp())
+        # For numeric stability we compute the logits of true label and
+        # directly use bce_with_logits.
+        # Ref https://pytorch.org/docs/stable/nn.html?highlight=bce#torch.nn.BCEWithLogitsLoss
+        logit_true = logit_model - logit_noise - math.log(self.noise_ratio)
 
-        loss = self.bce(p_true, label).sum(dim=2)
+        label = torch.zeros_like(logit_model)
+        label[:, :, 0] = 1
 
+        loss = self.bce_with_logits(logit_true, label).sum(dim=2)
         return loss
 
-    def sampled_softmax_loss(self, prob_model, prob_noise_in_model, prob_noise, prob_target_in_noise):
+    def sampled_softmax_loss(self, logit_target_in_model, logit_noise_in_model, logit_noise_in_noise, logit_target_in_noise):
         """Compute the sampled softmax loss based on the tensorflow's impl"""
-        logits = torch.cat([prob_model.unsqueeze(2), prob_noise_in_model], dim=2).clamp_min(BACKOFF_PROB).log()
-        q_logits = torch.cat([prob_target_in_noise.unsqueeze(2), prob_noise], dim=2).clamp_min(BACKOFF_PROB).log()
+        logits = torch.cat([logit_target_in_model.unsqueeze(2), logit_noise_in_model], dim=2)
+        q_logits = torch.cat([logit_target_in_noise.unsqueeze(2), logit_noise_in_noise], dim=2)
         # subtract Q for correction of biased sampling
         logits = logits - q_logits
         labels = torch.zeros_like(logits.narrow(2, 0, 1)).squeeze(2).long()
