@@ -231,3 +231,8 @@ optional arguments:
   --bptt             max length of truncated bptt
   --concat           use concatenated sentence instead of individual sentence
 ```
+
+
+# CHANGELOG
+
+- 2019.09.09: Improve numeric stability by directly calculation on logits
