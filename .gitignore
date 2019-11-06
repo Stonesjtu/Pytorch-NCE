@@ -12,3 +12,4 @@ runs/
 *.lprof
 *epoch*
 saved_model/
+.*
