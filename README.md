@@ -1,6 +1,23 @@
 An NCE implementation in pytorch
 ===
 
+
+Quick Start
+---
+
+### Installation
+
+You can install the nce module via pip:
+
+```bash
+pip install pytorch-nce
+```
+
+### quick start
+
+please check `sample.py`
+
+
 About NCE
 ---
 
