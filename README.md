@@ -88,10 +88,11 @@ batched NCE
 self contrasting:
 > https://www.isi.edu/natural-language/mt/simple-fast-noise.pdf
 
-About the code
+Run the word language model example
 ---
 
-This NCE module is forked from the pytorch/examples repo.
+There's an example illustrating how to use the NCE module in `example` folder.
+This example is forked from the pytorch/examples repo.
 
 ### Requirements
 
@@ -179,18 +180,19 @@ The rescore is performed on swbd 50-best, thanks to HexLee.
 
 ### File structure
 
-- `log/`: some log files of this scripts
+- `example/log/`: some log files of this scripts
 - `nce/`: the NCE module wrapper
     - `nce/nce_loss.py`: the NCE loss
     - `nce/alias_multinomial.py`: alias method sampling
     - `nce/index_linear.py`: an index module used by NCE, as a replacement for normal Linear module
     - `nce/index_gru.py`: an index module used by NCE, as a replacement for the whole language model module
 - `sample.py`: a simple script for NCE linear.
-- `vocab.py`: a wrapper for vocabulary object
-- `model.py`: the wrapper of all `nn.Module`s.
-- `generic_model.py`: the model wrapper for index_gru NCE module
-- `main.py`: entry point
-- `utils.py`: some util functions for better code structure
+- `example`: a word langauge model sample to use NCE as loss.
+    - `example/vocab.py`: a wrapper for vocabulary object
+    - `example/model.py`: the wrapper of all `nn.Module`s.
+    - `example/generic_model.py`: the model wrapper for index_gru NCE module
+    - `example/main.py`: entry point
+    - `example/utils.py`: some util functions for better code structure
 
 -----------------
 ### Modified README from Pytorch/examples

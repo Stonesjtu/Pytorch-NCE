@@ -1,6 +1,5 @@
 import setuptools
 
-install_requires = list(open('requirements.txt').read().splitlines())
 
 setuptools.setup(
     name='pytorch-nce',
@@ -16,5 +15,7 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=install_requires,
+    install_requires=[
+        'torch >= 1.0.0',
+    ],
 )
